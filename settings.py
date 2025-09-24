@@ -37,9 +37,15 @@ DEFAULT_DAILY_REWARD: int = 250
 DAILY_COOLDOWN_HOURS: int = 20
 SHOP_PAGE_SIZE: int       = 5
 
-EMOJIS = {
+EMOJIS: dict = {
     "stone": "🪨", "iron": "⛓️", "gold": "🪙", "diamond": "💎", "apple": "🍎", "shovel": "🛠️", "salmon": "🐟", "clownfish": "🐠", "crab": "🦀", "pufferfish": "🐡"
 } # self explained
+
+FISH_ITEMS: list[str]          = ["salmon", "clownfish", "crab", "pufferfish"]
+FISH_CHANCES: list[int, float] = [25, 10, 5, 0.5]
+
+DIG_ITEMS: list[str]          = ["gold", "stone", "copper", "iron", "diamond"]
+DIG_CHANCES: list[int, float] = [90, 25, 10, 5, 0.5]
 
 # Can be a hex but need to be changed to string if you want to use HEX colors
 GAMBLE_WIN_COLOR = Color.green()

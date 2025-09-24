@@ -6,7 +6,7 @@ import random
 import datetime
 import asyncio
 from main import logger
-from settings import PREFIX, DEFAULT_DAILY_REWARD, DAILY_COOLDOWN_HOURS, SHOP_PAGE_SIZE, EMOJIS, GAMBLE_LOSE_COLOR, GAMBLE_WIN_COLOR, DAILY_COLOR, BALANCE_COLOR, INVENTORY_COLOR, LOOT_COLOR, SELL_COLOR, HELP_COLOR
+from settings import PREFIX, DEFAULT_DAILY_REWARD, DAILY_COOLDOWN_HOURS, SHOP_PAGE_SIZE, EMOJIS, GAMBLE_LOSE_COLOR, GAMBLE_WIN_COLOR, DAILY_COLOR, BALANCE_COLOR, INVENTORY_COLOR, LOOT_COLOR, SELL_COLOR, HELP_COLOR, FISH_CHANCES, FISH_ITEMS, DIG_ITEMS, DIG_CHANCES
 
 # ===================== CONFIG =====================
 DB_PATH = "src/databases/economy.db"
@@ -275,19 +275,25 @@ class Economy(commands.Cog):
             return await ctx.send("❌ Times must be positive.")
         elif times >= 11:
             return await ctx.send("❌ Maximum is 10 per command!")
-        possible_items = ["stone", "iron", "gold", "diamond", "copper"]
+
+        possible_items = DIG_ITEMS
+        # Corresponding weights: stone common, diamond very rare
+        item_weights = DIG_CHANCES
+
         found_items = []
         for _ in range(times):
-            found = random.choices(possible_items, k=random.randint(1,3))
+            found = random.choices(possible_items, weights=item_weights, k=random.randint(1,3))
             for item in found:
                 await self.add_item(ctx.author.id, item, 1)
             found_items.extend(found)
+
         embed = discord.Embed(title=f"⛏️ You dug {times} times and found:", color=LOOT_COLOR)
         desc_dict = {}
         for item in found_items:
             desc_dict[item] = desc_dict.get(item, 0) + 1
         embed.description = "\n".join(f"{EMOJIS.get(item,'❔')} {item.capitalize()} x{qty}" for item, qty in desc_dict.items())
         await ctx.send(embed=embed)
+
 
     # ===================== FISH =====================
     @economy_group.command(name="fish")
@@ -296,19 +302,29 @@ class Economy(commands.Cog):
             return await ctx.send("❌ Times must be positive.")
         elif times >= 11:
             return await ctx.send("❌ Maximum is 10 per command!")
-        fish_items = ["salmon", "clownfish", "crab", "pufferfish"]
+
+        fish_items = FISH_ITEMS
+        # Base chance to catch each fish if something is caught
+        fish_weights = FISH_CHANCES  # salmon most common, pufferfish rare
+
         caught_items = []
         for _ in range(times):
-            caught = random.choices(fish_items, k=random.randint(1,2))
-            for fish in caught:
-                await self.add_item(ctx.author.id, fish.lower(), 1)
-            caught_items.extend(caught)
+            if random.randint(1, 100) <= 15:  # 15% chance to catch something
+                caught = random.choices(fish_items, weights=fish_weights, k=random.randint(1,2))
+                for fish in caught:
+                    await self.add_item(ctx.author.id, fish.lower(), 1)
+                caught_items.extend(caught)
+
+        if not caught_items:
+            return await ctx.send("🎣 You fished but didn't catch anything this time!")
+
         embed = discord.Embed(title=f"🎣 You fished {times} times and caught:", color=LOOT_COLOR)
         desc_dict = {}
         for fish in caught_items:
             desc_dict[fish] = desc_dict.get(fish, 0) + 1
         embed.description = "\n".join(f"{EMOJIS.get(fish,'❔')} {fish.capitalize()} x{qty}" for fish, qty in desc_dict.items())
         await ctx.send(embed=embed)
+
 
     # ===================== GAMBLE =====================
     @economy_group.command(name="gamble", aliases=["coinflip"])
