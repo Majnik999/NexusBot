@@ -3,3 +3,4 @@ colorama
 pillow
 python-dotenv
 requests
+aiosqlite

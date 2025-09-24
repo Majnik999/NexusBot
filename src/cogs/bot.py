@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from settings import QUIT_COMMAND, PREFIX
+from src.config.versions import BOT_VERSION
 
 import time
 
@@ -66,7 +67,18 @@ class OwnerCommands(commands.Cog):
     @botping.error
     async def handle_error_quitting(self, ctx, error):
         await ctx.send("❌ You are not owner or some error happened!")
+    
+    @commands.command(name="changes")
+    async def changes(self, ctx):
+        embed = discord.Embed(
+            title="Changes",
+            description="Here are the latest changes and updates:"
+        )
 
+        embed.add_field(name=BOT_VERSION, value="Latest bot version | Changes: \n\n* Fixed bugs\n* Added economy system", inline=False)
+        embed.set_footer(text="Version: "+BOT_VERSION)
+        
+        await ctx.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(OwnerCommands(bot))
