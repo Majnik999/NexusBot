@@ -572,4 +572,8 @@ class Economy(commands.Cog):
 
 # ===================== SETUP =====================
 async def setup(bot):
-    await bot.add_cog(Economy(bot))
+    try: 
+        await bot.add_cog(Economy(bot))
+    except Exception as e:
+        logger.error(f"Failed to load Economy cog: {e}")
+        raise e
