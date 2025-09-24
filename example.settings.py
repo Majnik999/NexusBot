@@ -41,6 +41,14 @@ EMOJIS = {
     "stone": "🪨", "iron": "⛓️", "gold": "🪙", "diamond": "💎", "apple": "🍎", "shovel": "🛠️", "salmon": "🐟", "clownfish": "🐠", "crab": "🦀", "pufferfish": "🐡"
 } # self explained
 
+COOLDOWN_DIG_FISH_MINUTES:int = 5
+
+FISH_ITEMS: list[str]          = ["salmon", "clownfish", "crab", "pufferfish"]
+FISH_CHANCES: list[int, float] = [25, 10, 5, 0.5]
+
+DIG_ITEMS: list[str]          = ["gold", "stone", "copper", "iron", "diamond"]
+DIG_CHANCES: list[int, float] = [90, 25, 10, 5, 0.5]
+
 # Can be a hex but need to be changed to string if you want to use HEX colors
 GAMBLE_WIN_COLOR = Color.green()
 GAMBLE_LOSE_COLOR = Color.red()
