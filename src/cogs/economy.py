@@ -6,26 +6,10 @@ import random
 import datetime
 import asyncio
 from main import logger
+from settings import PREFIX, DEFAULT_DAILY_REWARD, DAILY_COOLDOWN_HOURS, SHOP_PAGE_SIZE, EMOJIS, GAMBLE_LOSE_COLOR, GAMBLE_WIN_COLOR, DAILY_COLOR, BALANCE_COLOR, INVENTORY_COLOR, LOOT_COLOR, SELL_COLOR, HELP_COLOR
 
 # ===================== CONFIG =====================
-DB_PATH = "economy.db"
-DEFAULT_DAILY_REWARD = 200
-DAILY_COOLDOWN_HOURS = 16
-SHOP_PAGE_SIZE = 5
-
-EMOJIS = {
-    "stone": "🪨", "iron": "⛓️", "gold": "🪙", "diamond": "💎", "apple": "🍎",
-    "shovel": "🛠️", "salmon": "🐟", "clownfish": "🐠", "crab": "🦀", "pufferfish": "🐡"
-}
-
-GAMBLE_WIN_COLOR = discord.Color.green()
-GAMBLE_LOSE_COLOR = discord.Color.red()
-DAILY_COLOR = discord.Color.gold()
-BALANCE_COLOR = discord.Color.green()
-INVENTORY_COLOR = discord.Color.blue()
-LOOT_COLOR = discord.Color.purple()
-SELL_COLOR = discord.Color.orange()
-HELP_COLOR = discord.Color.blurple()
+DB_PATH = "src/databases/economy.db"
 
 # ===================== ECONOMY COG =====================
 class Economy(commands.Cog):
@@ -137,17 +121,17 @@ class Economy(commands.Cog):
     # ===================== HELP EMBED =====================
     async def eco_help(self, ctx):
         embed = discord.Embed(title="💰 Economy Commands", color=HELP_COLOR)
-        embed.add_field(name="/economy balance [user]", value="Check balance of yourself or a user", inline=False)
-        embed.add_field(name="/economy daily", value="Claim your daily reward", inline=False)
-        embed.add_field(name="/economy shop", value="Browse the shop (with page navigation)", inline=False)
-        embed.add_field(name="/economy buy <item_id> [amount]", value="Buy items from the shop", inline=False)
-        embed.add_field(name="/economy sell <item_id> [amount]", value="Sell items to the shop", inline=False)
-        embed.add_field(name="/economy inventory", value="Check your inventory", inline=False)
-        embed.add_field(name="/economy dig", value="Dig for resources", inline=False)
-        embed.add_field(name="/economy fish", value="Fish for items", inline=False)
-        embed.add_field(name="/economy gamble <amount>", value="Coinflip to gamble coins", inline=False)
-        embed.add_field(name="/economy trade", value="Trade items with another user", inline=False)
-        embed.add_field(name="/economy admin", value="Admin commands (give, take, reset, shopadd, shopremove)", inline=False)
+        embed.add_field(name=PREFIX+"economy balance [user]", value="Check balance of yourself or a user", inline=False)
+        embed.add_field(name=PREFIX+"economy daily", value="Claim your daily reward", inline=False)
+        embed.add_field(name=PREFIX+"economy shop", value="Browse the shop (with page navigation)", inline=False)
+        embed.add_field(name=PREFIX+"economy buy <item_id> [amount]", value="Buy items from the shop", inline=False)
+        embed.add_field(name=PREFIX+"economy sell <item_id> [amount]", value="Sell items to the shop", inline=False)
+        embed.add_field(name=PREFIX+"economy inventory", value="Check your inventory", inline=False)
+        embed.add_field(name=PREFIX+"economy dig", value="Dig for resources", inline=False)
+        embed.add_field(name=PREFIX+"economy fish", value="Fish for items", inline=False)
+        embed.add_field(name=PREFIX+"economy gamble <amount>", value="Coinflip to gamble coins", inline=False)
+        embed.add_field(name=PREFIX+"economy trade", value="Trade items with another user", inline=False)
+        embed.add_field(name=PREFIX+"economy admin", value="Admin commands (give, take, reset, shopadd, shopremove)", inline=False)
         await ctx.send(embed=embed)
 
     # ===================== BALANCE =====================

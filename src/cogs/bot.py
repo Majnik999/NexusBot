@@ -62,7 +62,7 @@ class OwnerCommands(commands.Cog):
     async def botping(self, ctx):
         latency = round(self.bot.latency * 1000)  # Convert to milliseconds and round
         
-        await ctx.send(f"Pong! Bot latency: {latency}")
+        await ctx.send(f"Pong! Bot latency: `{latency}ms`!")
     
     @botping.error
     async def handle_error_quitting(self, ctx, error):

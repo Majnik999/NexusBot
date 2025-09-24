@@ -1,3 +1,5 @@
+from discord import Color
+
 # Set bot prefix
 PREFIX = ">"
 
@@ -26,3 +28,25 @@ QUIT_COMMAND: bool = True
 
 # Bots invite link
 INVITE_LINK: str = "https://discord.com/oauth2/authorize?client_id=1106265534426796133"
+
+# Default daily reward
+# DEFAULT_DAILY_REWARD: intiger = HOW MUCH COINS DO USERS GET ON DAILY COMMAND
+# DAILY_COOLDOWN_HOURS: intiger = HOW MUCH HOURS DO USERS NEED TO WAIT TO GET DAILY REWARD IN HOURS
+# SHOP_PAGE_SIZE:       intiger = ITEMS PER PAGE
+DEFAULT_DAILY_REWARD: int = 250
+DAILY_COOLDOWN_HOURS: int = 20
+SHOP_PAGE_SIZE: int       = 5
+
+EMOJIS = {
+    "stone": "🪨", "iron": "⛓️", "gold": "🪙", "diamond": "💎", "apple": "🍎", "shovel": "🛠️", "salmon": "🐟", "clownfish": "🐠", "crab": "🦀", "pufferfish": "🐡"
+} # self explained
+
+# Can be a hex but need to be changed to string if you want to use HEX colors
+GAMBLE_WIN_COLOR = Color.green()
+GAMBLE_LOSE_COLOR = Color.red()
+DAILY_COLOR = Color.gold()
+BALANCE_COLOR = Color.green()
+INVENTORY_COLOR = Color.blue()
+LOOT_COLOR = Color.purple()
+SELL_COLOR = Color.orange()
+HELP_COLOR = Color.blurple()
