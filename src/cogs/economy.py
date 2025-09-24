@@ -273,6 +273,8 @@ class Economy(commands.Cog):
     async def dig(self, ctx, times: int = 1):
         if times <= 0:
             return await ctx.send("❌ Times must be positive.")
+        elif times >= 11:
+            return await ctx.send("❌ Maximum is 10 per command!")
         possible_items = ["stone", "iron", "gold", "diamond", "shovel"]
         found_items = []
         for _ in range(times):
