@@ -275,7 +275,7 @@ class Economy(commands.Cog):
             return await ctx.send("❌ Times must be positive.")
         elif times >= 11:
             return await ctx.send("❌ Maximum is 10 per command!")
-        possible_items = ["stone", "iron", "gold", "diamond", "shovel"]
+        possible_items = ["stone", "iron", "gold", "diamond", "copper"]
         found_items = []
         for _ in range(times):
             found = random.choices(possible_items, k=random.randint(1,3))
