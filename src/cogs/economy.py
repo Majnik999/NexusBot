@@ -127,8 +127,8 @@ class Economy(commands.Cog):
         embed.add_field(name=PREFIX+"economy buy <item_id> [amount]", value="Buy items from the shop", inline=False)
         embed.add_field(name=PREFIX+"economy sell <item_id> [amount]", value="Sell items to the shop", inline=False)
         embed.add_field(name=PREFIX+"economy inventory", value="Check your inventory", inline=False)
-        embed.add_field(name=PREFIX+"economy dig", value="Dig for resources", inline=False)
-        embed.add_field(name=PREFIX+"economy fish", value="Fish for items", inline=False)
+        embed.add_field(name=PREFIX+"economy dig [times]", value="Dig for resources multiple times", inline=False)
+        embed.add_field(name=PREFIX+"economy fish [times]", value="Fish for items multiple times", inline=False)
         embed.add_field(name=PREFIX+"economy gamble <amount>", value="Coinflip to gamble coins", inline=False)
         embed.add_field(name=PREFIX+"economy trade", value="Trade items with another user", inline=False)
         await ctx.send(embed=embed)
@@ -197,7 +197,8 @@ class Economy(commands.Cog):
             def create_embed(self):
                 embed = discord.Embed(title="🛒 Shop", color=BALANCE_COLOR)
                 for item_id, data in self.pages[self.current]:
-                    embed.add_field(name=f"{data['name']} (`{item_id}`)", value=f"Price: {data['price']} coins", inline=False)
+                    emoji = EMOJIS.get(item_id, "")
+                    embed.add_field(name=f"{emoji} {data['name']} (`{item_id}`)", value=f"Price: {data['price']} coins", inline=False)
                 embed.set_footer(text=f"Page {self.current+1}/{len(self.pages)} | /economy buy <item_id> <amount>")
                 return embed
 
@@ -269,24 +270,42 @@ class Economy(commands.Cog):
 
     # ===================== DIG =====================
     @economy_group.command(name="dig")
-    async def dig(self, ctx):
+    async def dig(self, ctx, times: int = 1):
+        if times <= 0:
+            return await ctx.send("❌ Times must be positive.")
         possible_items = ["stone", "iron", "gold", "diamond", "shovel"]
-        found = random.choices(possible_items, k=random.randint(1,3))
-        for item in found:
-            await self.add_item(ctx.author.id, item, 1)
-        embed = discord.Embed(title="⛏️ You dug and found:", color=LOOT_COLOR)
-        embed.description = "\n".join(f"{EMOJIS.get(item, '❔')} {item.capitalize()}" for item in found)
+        found_items = []
+        for _ in range(times):
+            found = random.choices(possible_items, k=random.randint(1,3))
+            for item in found:
+                await self.add_item(ctx.author.id, item, 1)
+            found_items.extend(found)
+        embed = discord.Embed(title=f"⛏️ You dug {times} times and found:", color=LOOT_COLOR)
+        desc_dict = {}
+        for item in found_items:
+            desc_dict[item] = desc_dict.get(item, 0) + 1
+        embed.description = "\n".join(f"{EMOJIS.get(item,'❔')} {item.capitalize()} x{qty}" for item, qty in desc_dict.items())
         await ctx.send(embed=embed)
 
     # ===================== FISH =====================
     @economy_group.command(name="fish")
-    async def fish(self, ctx):
+    async def fish(self, ctx, times: int = 1):
+        if times <= 0:
+            return await ctx.send("❌ Times must be positive.")
+        elif times >= 11:
+            return await ctx.send("❌ Maximum is 10 per command!")
         fish_items = ["salmon", "clownfish", "crab", "pufferfish"]
-        caught = random.choices(fish_items, k=random.randint(1,2))
-        for fish in caught:
-            await self.add_item(ctx.author.id, fish.lower(), 1)
-        embed = discord.Embed(title="🎣 You caught:", color=LOOT_COLOR)
-        embed.description = "\n".join(f"{EMOJIS.get(fish, '❔')} {fish.capitalize()}" for fish in caught)
+        caught_items = []
+        for _ in range(times):
+            caught = random.choices(fish_items, k=random.randint(1,2))
+            for fish in caught:
+                await self.add_item(ctx.author.id, fish.lower(), 1)
+            caught_items.extend(caught)
+        embed = discord.Embed(title=f"🎣 You fished {times} times and caught:", color=LOOT_COLOR)
+        desc_dict = {}
+        for fish in caught_items:
+            desc_dict[fish] = desc_dict.get(fish, 0) + 1
+        embed.description = "\n".join(f"{EMOJIS.get(fish,'❔')} {fish.capitalize()} x{qty}" for fish, qty in desc_dict.items())
         await ctx.send(embed=embed)
 
     # ===================== GAMBLE =====================
