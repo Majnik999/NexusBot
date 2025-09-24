@@ -50,9 +50,10 @@ class Economy(commands.Cog):
                 CREATE TABLE IF NOT EXISTS cooldowns (
                     user_id INTEGER,
                     command TEXT,
-                    last_used INTEGER,
+                    last_used INTEGER
                 )
             """)
+
             
             await db.commit()
 
@@ -524,7 +525,7 @@ class Economy(commands.Cog):
             await db.commit()
         await ctx.send(f"✅ Reset {member.mention}'s daily reward.")
 
-    @admin_group.command(name="invenotorygive", aliases=["inventoryadd", "invgive"])
+    @admin_group.command(name="inventorygive", aliases=["inventoryadd", "invgive"])
     @commands.is_owner()
     async def inventory_give(self, ctx, member: discord.Member, item: str, amount: int = 1):
         if amount <= 0:
