@@ -131,7 +131,6 @@ class Economy(commands.Cog):
         embed.add_field(name=PREFIX+"economy fish", value="Fish for items", inline=False)
         embed.add_field(name=PREFIX+"economy gamble <amount>", value="Coinflip to gamble coins", inline=False)
         embed.add_field(name=PREFIX+"economy trade", value="Trade items with another user", inline=False)
-        embed.add_field(name=PREFIX+"economy admin", value="Admin commands (give, take, reset, shopadd, shopremove)", inline=False)
         await ctx.send(embed=embed)
 
     # ===================== BALANCE =====================
