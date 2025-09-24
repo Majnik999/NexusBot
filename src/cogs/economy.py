@@ -247,7 +247,10 @@ class Economy(commands.Cog):
         item_id = item_id.lower()
         inventory = await self.get_inventory(ctx.author.id)
         if item_id not in inventory or inventory[item_id] < amount:
-            return await ctx.send(f"❌ You do not have enough {item_id} to sell.")
+            # Sell all items if amount exceeds the inventory amount
+            amount = inventory.get(item_id, 0)
+            if amount == 0:
+                return await ctx.send("❌ You do not have that item in your inventory.")
         shop_items = await self.fetch_shop_items()
         if item_id not in shop_items:
             return await ctx.send("❌ This item cannot be sold to the shop.")
