@@ -251,7 +251,10 @@ class Economy(commands.Cog):
         shop_items = await self.fetch_shop_items()
         if item_id not in shop_items:
             return await ctx.send("❌ This item cannot be sold to the shop.")
-        sell_price = shop_items[item_id]["price"] // 2
+        if shop_items[item_id]["price"] <= 1:
+            sell_price = shop_items[item_id]["price"]
+        else:
+            sell_price = shop_items[item_id]["price"] // 2
         total_earnings = sell_price * amount
         await self.remove_item(ctx.author.id, item_id, amount)
         await self.update_balance(ctx.author.id, total_earnings)
