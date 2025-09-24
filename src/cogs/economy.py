@@ -7,6 +7,7 @@ import datetime
 import asyncio
 from main import logger
 from settings import PREFIX, DEFAULT_DAILY_REWARD, DAILY_COOLDOWN_HOURS, SHOP_PAGE_SIZE, EMOJIS, GAMBLE_LOSE_COLOR, GAMBLE_WIN_COLOR, DAILY_COLOR, BALANCE_COLOR, INVENTORY_COLOR, LOOT_COLOR, SELL_COLOR, HELP_COLOR, FISH_CHANCES, FISH_ITEMS, DIG_ITEMS, DIG_CHANCES
+from src.config.versions import ECONOMY_VERSION
 
 # ===================== CONFIG =====================
 DB_PATH = "src/databases/economy.db"
@@ -121,6 +122,7 @@ class Economy(commands.Cog):
     # ===================== HELP EMBED =====================
     async def eco_help(self, ctx):
         embed = discord.Embed(title="💰 Economy Commands", color=HELP_COLOR)
+        
         embed.add_field(name=PREFIX+"economy balance [user]", value="Check balance of yourself or a user", inline=False)
         embed.add_field(name=PREFIX+"economy daily", value="Claim your daily reward", inline=False)
         embed.add_field(name=PREFIX+"economy shop", value="Browse the shop (with page navigation)", inline=False)
@@ -131,6 +133,9 @@ class Economy(commands.Cog):
         embed.add_field(name=PREFIX+"economy fish [times]", value="Fish for items multiple times", inline=False)
         embed.add_field(name=PREFIX+"economy gamble <amount>", value="Coinflip to gamble coins", inline=False)
         embed.add_field(name=PREFIX+"economy trade", value="Trade items with another user", inline=False)
+        
+        embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
+        
         await ctx.send(embed=embed)
 
     # ===================== BALANCE =====================
@@ -142,7 +147,7 @@ class Economy(commands.Cog):
         balance = await self.get_balance(member.id)
         embed = discord.Embed(title=f"{member.display_name}'s Balance", color=BALANCE_COLOR)
         embed.add_field(name="💰 Coins", value=balance)
-        embed.set_footer(text="Use /economy for more commands")
+        embed.set_footer(text=f"Use {PREFIX}economy for more commands | Version: {ECONOMY_VERSION}")
         await ctx.send(embed=embed)
 
     # ===================== DAILY =====================
@@ -171,6 +176,7 @@ class Economy(commands.Cog):
         embed = discord.Embed(title="🎁 Daily Reward", color=DAILY_COLOR)
         embed.add_field(name="Coins Earned", value=DEFAULT_DAILY_REWARD)
         embed.set_footer(text="Come back every day for more rewards!")
+        embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
         await ctx.send(embed=embed)
 
     # ===================== SHOP =====================
@@ -199,7 +205,7 @@ class Economy(commands.Cog):
                 for item_id, data in self.pages[self.current]:
                     emoji = EMOJIS.get(item_id, "")
                     embed.add_field(name=f"{emoji} {data['name']} (`{item_id}`)", value=f"Price: {data['price']} coins", inline=False)
-                embed.set_footer(text=f"Page {self.current+1}/{len(self.pages)} | /economy buy <item_id> <amount>")
+                embed.set_footer(text=f"Page {self.current+1}/{len(self.pages)} | {PREFIX}economy buy <item_id> <amount> | Version: {ECONOMY_VERSION}")
                 return embed
 
             @discord.ui.button(label="Previous", style=discord.ButtonStyle.secondary)
@@ -237,6 +243,7 @@ class Economy(commands.Cog):
         await self.update_balance(ctx.author.id, -total_price)
         await self.add_item(ctx.author.id, item_id, amount)
         embed = discord.Embed(title="🛒 Purchase Successful", description=f"You bought {amount} x {item['name']} for {total_price} coins.", color=BALANCE_COLOR)
+        embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
         await ctx.send(embed=embed)
 
     # ===================== SELL =====================
@@ -262,6 +269,7 @@ class Economy(commands.Cog):
         await self.remove_item(ctx.author.id, item_id, amount)
         await self.update_balance(ctx.author.id, total_earnings)
         embed = discord.Embed(title="💰 Item Sold", description=f"You sold {amount} x {shop_items[item_id]['name']} for {total_earnings} coins.", color=SELL_COLOR)
+        embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
         await ctx.send(embed=embed)
 
     # ===================== INVENTORY =====================
@@ -272,6 +280,7 @@ class Economy(commands.Cog):
             return await ctx.send("🎒 Your inventory is empty.")
         embed = discord.Embed(title=f"{ctx.author.display_name}'s Inventory", color=INVENTORY_COLOR)
         embed.description = "\n".join(f"{EMOJIS.get(item, '❔')} {item.capitalize()} x{qty}" for item, qty in inv.items())
+        embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
         await ctx.send(embed=embed)
 
     # ===================== DIG =====================
@@ -298,6 +307,7 @@ class Economy(commands.Cog):
         for item in found_items:
             desc_dict[item] = desc_dict.get(item, 0) + 1
         embed.description = "\n".join(f"{EMOJIS.get(item,'❔')} {item.capitalize()} x{qty}" for item, qty in desc_dict.items())
+        embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
         await ctx.send(embed=embed)
 
 
@@ -329,6 +339,7 @@ class Economy(commands.Cog):
         for fish in caught_items:
             desc_dict[fish] = desc_dict.get(fish, 0) + 1
         embed.description = "\n".join(f"{EMOJIS.get(fish,'❔')} {fish.capitalize()} x{qty}" for fish, qty in desc_dict.items())
+        embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
         await ctx.send(embed=embed)
 
 
@@ -343,6 +354,7 @@ class Economy(commands.Cog):
         won = random.choice([True, False])
         await self.update_balance(ctx.author.id, amount if won else -amount)
         embed = discord.Embed(title="🎲 Coinflip", description=f"You {'won' if won else 'lost'} {amount} coins!", color=GAMBLE_WIN_COLOR if won else GAMBLE_LOSE_COLOR)
+        embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
         await ctx.send(embed=embed)
 
     # ===================== TRADE =====================
@@ -384,7 +396,20 @@ class Economy(commands.Cog):
     @economy_group.group(name="admin", invoke_without_command=True)
     @commands.is_owner()
     async def admin_group(self, ctx):
-        await ctx.send("Admin commands: give, take, reset, shopadd, shopremove")
+        embed = discord.Embed(
+            title="Economy Admin Commands",
+            description=f"Manage the economy system."
+        )
+
+        embed.add_field(name=PREFIX+"eco admin give <user> <amount>", value=f"Gives coins to a user.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin take <user> <amount>", value=f"Takes coins from a user.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin reset <user>", value=f"Resets a user's economy data.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin shopadd <item> <price>", value=f"Adds an item to the shop.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin shopremove <item>", value=f"Removes an item from the shop.", inline=False)
+
+        embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
+
+        await ctx.send(embed=embed)
 
     @admin_group.command(name="give")
     @commands.is_owner()

@@ -15,6 +15,7 @@ HELP_DATA = {
             PREFIX + "sudo help": "Play with fun sudo commands",
             PREFIX + "wordle help": "Play wordle game",
             PREFIX + "maze help": "Play maze game",
+            PREFIX + "eco help": "Economy system!",
         }
     },
     "moderation": {
