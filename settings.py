@@ -41,6 +41,8 @@ EMOJIS: dict = {
     "stone": "🪨", "iron": "⛓️", "gold": "🪙", "diamond": "💎", "apple": "🍎", "shovel": "🛠️", "salmon": "🐟", "clownfish": "🐠", "crab": "🦀", "pufferfish": "🐡"
 } # self explained
 
+COOLDOWN_DIG_FISH_MINUTES:int = 5
+
 FISH_ITEMS: list[str]          = ["salmon", "clownfish", "crab", "pufferfish"]
 FISH_CHANCES: list[int, float] = [25, 10, 5, 0.5]
 

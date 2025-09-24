@@ -6,7 +6,7 @@ import random
 import datetime
 import asyncio
 from main import logger
-from settings import PREFIX, DEFAULT_DAILY_REWARD, DAILY_COOLDOWN_HOURS, SHOP_PAGE_SIZE, EMOJIS, GAMBLE_LOSE_COLOR, GAMBLE_WIN_COLOR, DAILY_COLOR, BALANCE_COLOR, INVENTORY_COLOR, LOOT_COLOR, SELL_COLOR, HELP_COLOR, FISH_CHANCES, FISH_ITEMS, DIG_ITEMS, DIG_CHANCES
+from settings import PREFIX, DEFAULT_DAILY_REWARD, DAILY_COOLDOWN_HOURS, SHOP_PAGE_SIZE, EMOJIS, GAMBLE_LOSE_COLOR, GAMBLE_WIN_COLOR, DAILY_COLOR, BALANCE_COLOR, INVENTORY_COLOR, LOOT_COLOR, SELL_COLOR, HELP_COLOR, FISH_CHANCES, FISH_ITEMS, DIG_ITEMS, DIG_CHANCES, COOLDOWN_DIG_FISH_MINUTES
 from src.config.versions import ECONOMY_VERSION
 
 # ===================== CONFIG =====================
@@ -46,9 +46,40 @@ class Economy(commands.Cog):
                     price INTEGER
                 )
             """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS cooldowns (
+                    user_id INTEGER,
+                    command TEXT,
+                    last_used INTEGER,
+                )
+            """)
+            
             await db.commit()
 
     # ================= HELPER FUNCTIONS =================
+    async def get_cooldown(self, user_id: int, command: str) -> int:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT last_used FROM cooldowns WHERE user_id = ? AND command = ?", (user_id, command)) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+            
+    async def set_cooldown(self, user_id: int, command: str):
+        now = int(datetime.datetime.utcnow().timestamp())
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("INSERT OR REPLACE INTO cooldowns (user_id, command, last_used) VALUES (?, ?, ?)",
+                             (user_id, command, now))
+            await db.commit()
+    
+    async def has_user_cooldown(self, user_id: int, command: str, cooldown_seconds: int) -> bool:
+        last_used = await self.get_cooldown(user_id, command)
+        now = int(datetime.datetime.utcnow().timestamp())
+        return (now - last_used) < cooldown_seconds
+    
+    async def clear_cooldowns(self, user_id: int):
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("DELETE FROM cooldowns WHERE user_id = ?", (user_id,))
+            await db.commit()
+    
     async def get_balance(self, user_id: int) -> int:
         if user_id == self.bot.user.id:
             return 0
@@ -286,6 +317,10 @@ class Economy(commands.Cog):
     # ===================== DIG =====================
     @economy_group.command(name="dig")
     async def dig(self, ctx, times: int = 1):
+        # set cooldown to be 5minutes
+        if await self.has_user_cooldown(ctx.author.id, "dig", COOLDOWN_DIG_FISH_MINUTES*60):
+            return await ctx.send("❌ You are on cooldown for this command. Please wait before digging again.")
+        await self.set_cooldown(ctx.author.id, "dig")
         if times <= 0:
             return await ctx.send("❌ Times must be positive.")
         elif times >= 11:
@@ -314,6 +349,9 @@ class Economy(commands.Cog):
     # ===================== FISH =====================
     @economy_group.command(name="fish")
     async def fish(self, ctx, times: int = 1):
+        if await self.has_user_cooldown(ctx.author.id, "fish", COOLDOWN_DIG_FISH_MINUTES*60):
+            return await ctx.send("❌ You are on cooldown for this command. Please wait before fishing again.")
+        await self.set_cooldown(ctx.author.id, "fish")
         if times <= 0:
             return await ctx.send("❌ Times must be positive.")
         elif times >= 11:
@@ -412,6 +450,8 @@ class Economy(commands.Cog):
         embed.add_field(name=PREFIX+"eco admin inventorygive <user> <item_id> [amount]", value=f"Gives an item to a user's inventory.", inline=False)
         embed.add_field(name=PREFIX+"eco admin inventorytake <user> <item_id> [amount]", value=f"Takes an item from a user's inventory.", inline=False)
         embed.add_field(name=PREFIX+"eco admin inventorysee <user>", value=f"Sees a user's inventory.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin clearcooldowns <user>", value=f"Clears all cooldowns for a user.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin clearcooldown <user> <command>", value=f"Clears a specific command cooldown for a user.", inline=False)
 
         embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
 
@@ -514,6 +554,20 @@ class Economy(commands.Cog):
             return await ctx.send(f"❌ {member.mention} has no items in their inventory.")
         inventory_list = "\n".join([f"{item}: {amount}" for item, amount in user_inventory.items()])
         await ctx.send(f"📦 {member.mention}'s Inventory:\n{inventory_list}")
+    
+    @admin_group.command(name="clearcooldowns", aliases=["resetcooldowns", "cooldownclear", "cooldownreset"])
+    @commands.is_owner()
+    async def clear_cooldowns(self, ctx, member: discord.Member):
+        await self.clear_cooldowns(member.id)
+        await ctx.send(f"✅ Cleared all cooldowns for {member.mention}.")
+        
+    @admin_group.command(name="clearcooldown", aliases=["resetcooldown", "cooldownclearone", "cooldownresetone"])
+    @commands.is_owner()
+    async def clear_cooldown(self, ctx, member: discord.Member, command: str):
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("DELETE FROM cooldowns WHERE user_id = ? AND command = ?", (member.id, command))
+            await db.commit()
+        await ctx.send(f"✅ Cleared cooldown for command '{command}' for {member.mention}.")
 
 # ===================== SETUP =====================
 async def setup(bot):
