@@ -248,7 +248,7 @@ class Economy(commands.Cog):
 
     # ===================== SELL =====================
     @economy_group.command(name="sell")
-    async def sell(self, ctx, item_id: str, amount: int = 1):
+    async def sell(self, ctx, item_id: str, amount: int = 1000000000000000000000000000000000):
         if amount <= 0:
             return await ctx.send("❌ Amount must be positive.")
         item_id = item_id.lower()
@@ -404,8 +404,14 @@ class Economy(commands.Cog):
         embed.add_field(name=PREFIX+"eco admin give <user> <amount>", value=f"Gives coins to a user.", inline=False)
         embed.add_field(name=PREFIX+"eco admin take <user> <amount>", value=f"Takes coins from a user.", inline=False)
         embed.add_field(name=PREFIX+"eco admin reset <user>", value=f"Resets a user's economy data.", inline=False)
-        embed.add_field(name=PREFIX+"eco admin shopadd <item> <price>", value=f"Adds an item to the shop.", inline=False)
-        embed.add_field(name=PREFIX+"eco admin shopremove <item>", value=f"Removes an item from the shop.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin shopadd <item_id> <price> <item_name>", value=f"Adds an item to the shop.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin shopremove <item_id>", value=f"Removes an item from the shop.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin setbalance <user> <amount>", value=f"Sets a user's balance.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin resetdaily <user>", value=f"Resets a user's daily cooldown.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin inventoryclear <user>", value=f"Clears a user's inventory.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin inventorygive <user> <item_id> [amount]", value=f"Gives an item to a user's inventory.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin inventorytake <user> <item_id> [amount]", value=f"Takes an item from a user's inventory.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin inventorysee <user>", value=f"Sees a user's inventory.", inline=False)
 
         embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
 
@@ -450,6 +456,64 @@ class Economy(commands.Cog):
             await db.execute("DELETE FROM shop_items WHERE item_id = ?", (item_id.lower(),))
             await db.commit()
         await ctx.send(f"✅ Removed shop item `{item_id}`")
+    
+    @admin_group.command(name="inventoryclear", aliases=["clearinventory", "invclear"])
+    @commands.is_owner()
+    async def inventory_clear(self, ctx, member: discord.Member):
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("DELETE FROM inventory WHERE user_id = ?", (member.id,))
+            await db.commit()
+        await ctx.send(f"✅ Cleared {member.mention}'s inventory.")
+    
+    @admin_group.command(name="setbalance", aliases=["setbal"])
+    @commands.is_owner()
+    async def set_balance(self, ctx, member: discord.Member, amount: int):
+        if amount < 0:
+            return await ctx.send("❌ Balance cannot be negative.")
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("INSERT OR REPLACE INTO economy (user_id, balance, last_daily) VALUES (?, ?, COALESCE((SELECT last_daily FROM economy WHERE user_id = ?), NULL))",
+                             (member.id, amount, member.id))
+            await db.commit()
+        await ctx.send(f"✅ Set {member.mention}'s balance to {amount} coins.")
+    
+    @admin_group.command(name="resetdaily")
+    @commands.is_owner()
+    async def reset_daily(self, ctx, member: discord.Member):
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE economy SET last_daily = NULL WHERE user_id = ?", (member.id,))
+            await db.commit()
+        await ctx.send(f"✅ Reset {member.mention}'s daily reward.")
+
+    @admin_group.command(name="invenotorygive", aliases=["inventoryadd", "invgive"])
+    @commands.is_owner()
+    async def inventory_give(self, ctx, member: discord.Member, item: str, amount: int = 1):
+        if amount <= 0:
+            return await ctx.send("❌ Amount must be positive.")
+        await self.add_item(member.id, item.lower(), amount)
+        await ctx.send(f"✅ Gave {amount} x {item} to {member.mention}'s inventory.")
+    
+    @admin_group.command(name="inventorytake", aliases=["inventoryremove", "invtake"])
+    @commands.is_owner()
+    async def inventory_take(self, ctx, member: discord.Member, item: str, amount: int = 1):
+        if amount <= 0:
+            return await ctx.send("❌ Amount must be positive.")
+        # Make this so if user doesn't have enough, it takes all they have
+        user_inventory = await self.get_inventory(member.id)
+        if item.lower() not in user_inventory or user_inventory[item.lower()] < amount:
+            amount = user_inventory.get(item.lower(), 0)
+            if amount == 0:
+                return await ctx.send(f"❌ {member.mention} does not have that item in their inventory.")
+        await self.remove_item(member.id, item.lower(), amount)
+        await ctx.send(f"✅ Took {amount} x {item} from {member.mention}'s inventory.")
+    
+    @admin_group.command(name="inventorysee", aliases=["inventoryview", "invsee", "seeinventory", "viewinventory", "invview"])
+    @commands.is_owner()
+    async def inventory_see(self, ctx, member: discord.Member):
+        user_inventory = await self.get_inventory(member.id)
+        if not user_inventory:
+            return await ctx.send(f"❌ {member.mention} has no items in their inventory.")
+        inventory_list = "\n".join([f"{item}: {amount}" for item, amount in user_inventory.items()])
+        await ctx.send(f"📦 {member.mention}'s Inventory:\n{inventory_list}")
 
 # ===================== SETUP =====================
 async def setup(bot):
