@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 # ================= CONFIG =================
-BASE_URL = "https://raw.githubusercontent.com/Majnik999/discord-all-in-one-bot_nexusbot/main/"
+BASE_URL = "https://raw.githubusercontent.com/Majnik999/NexusBot/main/"
 REPO_PATH = Path(__file__).parent
 UPDATER_FILE = Path(__file__).name
 MAIN_SCRIPT = "main.py"  # The script to run if no updates
