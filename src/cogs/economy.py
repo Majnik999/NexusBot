@@ -466,8 +466,11 @@ class Economy(commands.Cog):
 
         player_hand = [deck.pop(), deck.pop()]
         dealer_hand = [deck.pop(), deck.pop()]
+        
+        win = None
 
         def create_embed(final=False):
+            global win
             embed = discord.Embed(title="🃏 Blackjack", color=BALANCE_COLOR)
             embed.add_field(name="Your Hand", value=" ".join(f"{suit}{rank}" for suit, rank in player_hand) + f" (Total: {calculate_hand(player_hand)})", inline=False)
             if final:
@@ -479,12 +482,16 @@ class Economy(commands.Cog):
                 dealer_total = calculate_hand(dealer_hand)
                 if player_total > 21:
                     result = "You busted! You lose."
+                    win = False
                 elif dealer_total > 21 or player_total > dealer_total:
                     result = "You win!"
+                    win = True
                 elif player_total < dealer_total:
                     result = "You lose!"
+                    win = False
                 else:
                     result = "It's a draw!"
+                    win = False
                 embed.add_field(name="Result", value=result, inline=False)
             embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
             return embed
@@ -517,8 +524,10 @@ class Economy(commands.Cog):
                     self.result = "draw"
                 self.stop()
                 await interaction.response.edit_message(embed=create_embed(final=True))
-        
-        await ctx.send(embed=create_embed(), view=BlackjackView())
+        if win or not win: 
+            await ctx.send(embed=create_embed())
+        else:
+            await ctx.send(embed=create_embed(), view=BlackjackView())
     
     # ===================== TRADE =====================
     @economy_group.command(name="trade")
