@@ -628,16 +628,16 @@ class Economy(commands.Cog):
         embed.add_field(name=PREFIX+"eco admin give <user> <amount>", value=f"Gives coins to a user.", inline=False)
         embed.add_field(name=PREFIX+"eco admin take <user> <amount>", value=f"Takes coins from a user.", inline=False)
         embed.add_field(name=PREFIX+"eco admin reset <user>", value=f"Resets a user's economy data.", inline=False)
-        embed.add_field(name=PREFIX+"eco admin shopadd <item_id> <price> <item_name>", value=f"Adds an item to the shop.", inline=False)
-        embed.add_field(name=PREFIX+"eco admin shopremove <item_id>", value=f"Removes an item from the shop.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin shop add <item_id> <price> <item_name>", value=f"Adds an item to the shop.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin shop remove <item_id>", value=f"Removes an item from the shop.", inline=False)
         embed.add_field(name=PREFIX+"eco admin setbalance <user> <amount>", value=f"Sets a user's balance.", inline=False)
         embed.add_field(name=PREFIX+"eco admin resetdaily <user>", value=f"Resets a user's daily cooldown.", inline=False)
-        embed.add_field(name=PREFIX+"eco admin inventoryclear <user>", value=f"Clears a user's inventory.", inline=False)
-        embed.add_field(name=PREFIX+"eco admin inventorygive <user> <item_id> [amount]", value=f"Gives an item to a user's inventory.", inline=False)
-        embed.add_field(name=PREFIX+"eco admin inventorytake <user> <item_id> [amount]", value=f"Takes an item from a user's inventory.", inline=False)
-        embed.add_field(name=PREFIX+"eco admin inventorysee <user>", value=f"Sees a user's inventory.", inline=False)
-        embed.add_field(name=PREFIX+"eco admin clearcooldowns <user>", value=f"Clears all cooldowns for a user.", inline=False)
-        embed.add_field(name=PREFIX+"eco admin clearcooldown <user> <command>", value=f"Clears a specific command cooldown for a user.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin inventory clear <user>", value=f"Clears a user's inventory.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin inventory give <user> <item_id> [amount]", value=f"Gives an item to a user's inventory.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin inventory take <user> <item_id> [amount]", value=f"Takes an item from a user's inventory.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin inventory see <user>", value=f"Sees a user's inventory.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin cooldown all <user>", value=f"Clears all cooldowns for a user.", inline=False)
+        embed.add_field(name=PREFIX+"eco admin cooldown one <user> <command>", value=f"Clears a specific command cooldown for a user.", inline=False)
 
         embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
 
@@ -663,8 +663,12 @@ class Economy(commands.Cog):
             await db.execute("DELETE FROM inventory WHERE user_id = ?", (member.id,))
             await db.commit()
         await ctx.send(f"✅ Reset {member.mention}'s profile.")
+    
+    @admin_group.group(name="shop", invoke_without_command=False)
+    async def shop_admin_group(self, ctx):
+        pass
 
-    @admin_group.command(name="shopadd")
+    @shop_admin_group.command(name="add")
     @commands.is_owner()
     async def shop_add(self, ctx, item_id: str, price: int, *, name: str):
         async with aiosqlite.connect(DB_PATH) as db:
@@ -675,7 +679,7 @@ class Economy(commands.Cog):
             await db.commit()
         await ctx.send(f"✅ Added/Updated shop item `{item_id}` → {name} ({price} coins)")
 
-    @admin_group.command(name="shopremove")
+    @shop_admin_group.command(name="remove", aliases=["delete", "del", "rm", "rem"])
     @commands.is_owner()
     async def shop_remove(self, ctx, item_id: str):
         async with aiosqlite.connect(DB_PATH) as db:
@@ -683,7 +687,11 @@ class Economy(commands.Cog):
             await db.commit()
         await ctx.send(f"✅ Removed shop item `{item_id}`")
     
-    @admin_group.command(name="inventoryclear", aliases=["clearinventory", "invclear"])
+    @admin_group.group(name="inventory", invoke_without_command=False, aliases=["inv"])
+    async def inventory_admin_group(self, ctx):
+        pass
+
+    @inventory_admin_group.command(name="clear", aliases=["clearinventory", "invclear"])
     @commands.is_owner()
     async def inventory_clear(self, ctx, member: discord.Member):
         async with aiosqlite.connect(DB_PATH) as db:
@@ -710,15 +718,15 @@ class Economy(commands.Cog):
             await db.commit()
         await ctx.send(f"✅ Reset {member.mention}'s daily reward.")
 
-    @admin_group.command(name="inventorygive", aliases=["inventoryadd", "invgive"])
+    @inventory_admin_group.command(name="give", aliases=["add"])
     @commands.is_owner()
     async def inventory_give(self, ctx, member: discord.Member, item: str, amount: int = 1):
         if amount <= 0:
             return await ctx.send("❌ Amount must be positive.")
         await self.add_item(member.id, item.lower(), amount)
         await ctx.send(f"✅ Gave {amount} x {item} to {member.mention}'s inventory.")
-    
-    @admin_group.command(name="inventorytake", aliases=["inventoryremove", "invtake"])
+
+    @inventory_admin_group.command(name="take", aliases=["remove", "del", "rm", "rem"])
     @commands.is_owner()
     async def inventory_take(self, ctx, member: discord.Member, item: str, amount: int = 1):
         if amount <= 0:
@@ -731,8 +739,8 @@ class Economy(commands.Cog):
                 return await ctx.send(f"❌ {member.mention} does not have that item in their inventory.")
         await self.remove_item(member.id, item.lower(), amount)
         await ctx.send(f"✅ Took {amount} x {item} from {member.mention}'s inventory.")
-    
-    @admin_group.command(name="inventorysee", aliases=["inventoryview", "invsee", "seeinventory", "viewinventory", "invview"])
+
+    @inventory_admin_group.command(name="see", aliases=["inventoryview", "invsee", "seeinventory", "viewinventory", "invview"])
     @commands.is_owner()
     async def inventory_see(self, ctx, member: discord.Member):
         user_inventory = await self.get_inventory(member.id)
@@ -741,13 +749,17 @@ class Economy(commands.Cog):
         inventory_list = "\n".join([f"{item}: {amount}" for item, amount in user_inventory.items()])
         await ctx.send(f"📦 {member.mention}'s Inventory:\n{inventory_list}")
     
-    @admin_group.command(name="clearcooldowns", aliases=["resetcooldowns", "cooldownclear", "cooldownreset"])
+    @admin_group.group(name="cooldown", invoke_without_command=False)
+    async def cooldown_admin_group(self, ctx):
+        pass
+    
+    @cooldown_admin_group.command(name="all", aliases=["resetcooldowns", "cooldownclear", "cooldownreset"])
     @commands.is_owner()
     async def clear_cooldowns(self, ctx, member: discord.Member):
         await self.clear_cooldowns(member.id)
         await ctx.send(f"✅ Cleared all cooldowns for {member.mention}.")
         
-    @admin_group.command(name="clearcooldown", aliases=["resetcooldown", "cooldownclearone", "cooldownresetone"])
+    @cooldown_admin_group.command(name="one", aliases=["resetcooldown", "cooldownclearone", "cooldownresetone"])
     @commands.is_owner()
     async def clear_cooldown(self, ctx, member: discord.Member, command: str):
         async with aiosqlite.connect(DB_PATH) as db:
