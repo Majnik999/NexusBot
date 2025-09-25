@@ -67,8 +67,8 @@ class Economy(commands.Cog):
                 row = await cursor.fetchone()
                 return row[0] if row else 0
 
-    async def set_cooldown(self, user_id: int, command: str, timestamp: int | None = None):
-        now = timestamp or int(datetime.datetime.utcnow().timestamp())
+    async def set_cooldown(self, user_id: int, command: str):
+        now = int(datetime.datetime.utcnow().timestamp())
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
                 "INSERT OR REPLACE INTO cooldowns (user_id, command, last_used) VALUES (?, ?, ?)",
@@ -82,7 +82,7 @@ class Economy(commands.Cog):
         last_used = await self.get_cooldown(user_id, command)
         now = int(datetime.datetime.utcnow().timestamp())
         if (now - last_used) < cooldown_seconds:
-            return last_used + cooldown_seconds  # returns expiry timestamp
+            return last_used + cooldown_seconds  # expiry timestamp
         return None
 
     async def clear_cooldowns(self, user_id: int):
@@ -333,23 +333,25 @@ class Economy(commands.Cog):
     @economy_group.command(name="dig")
     async def dig(self, ctx, times: int = 1):
         cooldown_seconds = COOLDOWN_DIG_FISH_MINUTES * 60
-        expiry = await self.has_user_cooldown(ctx.author.id, "dig", cooldown_seconds)
-        if expiry:
+        remaining = await self.has_user_cooldown(ctx.author.id, "dig", cooldown_seconds)
+        if remaining:
             return await ctx.send(
                 f"❌ You are on cooldown for this command.\n"
-                f"Try again <t:{expiry}:R> (<t:{expiry}:F>)"
+                f"Try again <t:{remaining}:R> (<t:{remaining}:F>)"
             )
 
+        await self.set_cooldown(ctx.author.id, "dig")
         if times <= 0:
             return await ctx.send("❌ Times must be positive.")
-        elif times > 10:
+        elif times >= 11:
             return await ctx.send("❌ Maximum is 10 per command!")
 
-        await self.set_cooldown(ctx.author.id, "dig")
+        possible_items = DIG_ITEMS
+        item_weights = DIG_CHANCES
 
         found_items = []
         for _ in range(times):
-            found = random.choices(DIG_ITEMS, weights=DIG_CHANCES, k=random.randint(0, 5))
+            found = random.choices(possible_items, weights=item_weights, k=random.randint(0, 5))
             for item in found:
                 await self.add_item(ctx.author.id, item, 1)
             found_items.extend(found)
@@ -370,24 +372,26 @@ class Economy(commands.Cog):
     @economy_group.command(name="fish")
     async def fish(self, ctx, times: int = 1):
         cooldown_seconds = COOLDOWN_DIG_FISH_MINUTES * 60
-        expiry = await self.has_user_cooldown(ctx.author.id, "fish", cooldown_seconds)
-        if expiry:
+        remaining = await self.has_user_cooldown(ctx.author.id, "fish", cooldown_seconds)
+        if remaining:
             return await ctx.send(
                 f"❌ You are on cooldown for this command.\n"
-                f"Try again <t:{expiry}:R> (<t:{expiry}:F>)"
+                f"Try again <t:{remaining}:R> (<t:{remaining}:F>)"
             )
 
+        await self.set_cooldown(ctx.author.id, "fish")
         if times <= 0:
             return await ctx.send("❌ Times must be positive.")
-        elif times > 10:
+        elif times >= 11:
             return await ctx.send("❌ Maximum is 10 per command!")
 
-        await self.set_cooldown(ctx.author.id, "fish")
+        fish_items = FISH_ITEMS
+        fish_weights = FISH_CHANCES
 
         caught_items = []
         for _ in range(times):
             if random.randint(1, 100) <= FISH_CATCH_CHANCE_PERCENTAGE:
-                caught = random.choices(FISH_ITEMS, weights=FISH_CHANCES, k=random.randint(1, 2))
+                caught = random.choices(fish_items, weights=fish_weights, k=random.randint(1, 2))
                 for fish in caught:
                     await self.add_item(ctx.author.id, fish.lower(), 1)
                 caught_items.extend(caught)
