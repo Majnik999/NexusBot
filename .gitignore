@@ -6,5 +6,6 @@ src/__pycache__
 src/cogs/__pycache__
 .env
 src/logs/*
-settings.py
 economy.db
+NexusBot.code-workspace
+settings.py

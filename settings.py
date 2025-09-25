@@ -1,7 +1,7 @@
 from discord import Color
 
 # Set bot prefix
-PREFIX = ">"
+PREFIX = ";"
 
 # SUDO dance command emojis:
 DANCE_MOVES: list[any] = ["💃", "🕺", "🩰", "🪩", "🤖", "🐒", "👯", "🎉"]
