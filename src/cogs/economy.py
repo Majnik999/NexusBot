@@ -336,8 +336,8 @@ class Economy(commands.Cog):
         remaining = await self.has_user_cooldown(ctx.author.id, "dig", cooldown_seconds)
         if remaining:
             return await ctx.send(
-                f"❌ You are on cooldown for this command.\n"
-                f"Try again <t:{remaining}:R> (<t:{remaining}:F>)"
+                f"❌ You are on cooldown for this command. "
+                f"Try again <t:{remaining}:R> (<t:{remaining}:T>)"
             )
 
         await self.set_cooldown(ctx.author.id, "dig")
@@ -375,8 +375,8 @@ class Economy(commands.Cog):
         remaining = await self.has_user_cooldown(ctx.author.id, "fish", cooldown_seconds)
         if remaining:
             return await ctx.send(
-                f"❌ You are on cooldown for this command.\n"
-                f"Try again <t:{remaining}:R> (<t:{remaining}:F>)"
+                f"❌ You are on cooldown for this command. "
+                f"Try again <t:{remaining}:R> (<t:{remaining}:T>)"
             )
 
         await self.set_cooldown(ctx.author.id, "fish")
