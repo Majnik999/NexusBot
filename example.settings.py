@@ -45,9 +45,13 @@ COOLDOWN_DIG_FISH_MINUTES:int = 5
 
 FISH_ITEMS: list[str]          = ["salmon", "clownfish", "crab", "pufferfish"]
 FISH_CHANCES: list[int, float] = [25, 10, 5, 0.5]
+FISH_CATCH_CHANCE_PERCENTAGE: int = 15
 
 DIG_ITEMS: list[str]          = ["gold", "stone", "copper", "iron", "diamond"]
 DIG_CHANCES: list[int, float] = [90, 25, 10, 5, 0.5]
+
+BLACK_JACK_SUITS: list[str] = ['♠', '♥', '♦', '♣']
+BLACK_JACK_RANKS: list[str] = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
 
 # Can be a hex but need to be changed to string if you want to use HEX colors
 GAMBLE_WIN_COLOR = Color.green()
