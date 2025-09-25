@@ -524,7 +524,7 @@ class Economy(commands.Cog):
                     self.result = "draw"
                 self.stop()
                 await interaction.response.edit_message(embed=create_embed(final=True))
-        if win or not win: 
+        if win == True or win == False: 
             await ctx.send(embed=create_embed())
         else:
             await ctx.send(embed=create_embed(), view=BlackjackView())
