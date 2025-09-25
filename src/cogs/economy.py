@@ -76,6 +76,11 @@ class Economy(commands.Cog):
             )
             await db.commit()
 
+    async def delete_old_record_cooldown(self, user_id: int, command: str):
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("DELETE FROM cooldowns WHERE user_id = ? AND command = ?", (user_id, command))
+            await db.commit()
+
     async def has_user_cooldown(
         self, user_id: int, command: str, cooldown_seconds: int
     ) -> int | None:
@@ -339,7 +344,10 @@ class Economy(commands.Cog):
                 f"❌ You are on cooldown for this command. "
                 f"Try again <t:{remaining}:R> (<t:{remaining}:T>)"
             )
-
+        else:
+            await self.delete_old_record_cooldown(ctx.author.id, "dig")
+        
+        
         await self.set_cooldown(ctx.author.id, "dig")
         if times <= 0:
             return await ctx.send("❌ Times must be positive.")
@@ -378,6 +386,8 @@ class Economy(commands.Cog):
                 f"❌ You are on cooldown for this command. "
                 f"Try again <t:{remaining}:R> (<t:{remaining}:T>)"
             )
+        else:
+            await self.delete_old_record_cooldown(ctx.author.id, "fish")
 
         await self.set_cooldown(ctx.author.id, "fish")
         if times <= 0:
