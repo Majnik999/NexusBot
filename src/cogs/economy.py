@@ -753,13 +753,13 @@ class Economy(commands.Cog):
     async def cooldown_admin_group(self, ctx):
         pass
     
-    @cooldown_admin_group.command(name="all", aliases=["resetcooldowns", "cooldownclear", "cooldownreset"])
+    @cooldown_admin_group.command(name="all", aliases=["resetall"])
     @commands.is_owner()
     async def clear_cooldowns(self, ctx, member: discord.Member):
         await self.clear_cooldowns(member.id)
         await ctx.send(f"✅ Cleared all cooldowns for {member.mention}.")
         
-    @cooldown_admin_group.command(name="one", aliases=["resetcooldown", "cooldownclearone", "cooldownresetone"])
+    @cooldown_admin_group.command(name="one", aliases=["reset", "resetone"])
     @commands.is_owner()
     async def clear_cooldown(self, ctx, member: discord.Member, command: str):
         async with aiosqlite.connect(DB_PATH) as db:
