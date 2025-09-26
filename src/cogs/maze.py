@@ -221,9 +221,9 @@ class MazeView(View):
         # Hollow - Stop - Hollow
         self.add_item(Button(label="\u200b", style=discord.ButtonStyle.secondary, disabled=True, row=2))
         self.add_item(Button(label="\u200b", style=discord.ButtonStyle.secondary, disabled=True, row=2))
+        self.add_item(Button(label="\u200b", style=discord.ButtonStyle.secondary, disabled=True, row=2))
+        self.add_item(Button(label="\u200b", style=discord.ButtonStyle.secondary, disabled=True, row=2))
         self.add_item(Button(label="Stop", style=discord.ButtonStyle.danger, custom_id="stop", row=2))
-        self.add_item(Button(label="\u200b", style=discord.ButtonStyle.secondary, disabled=True, row=2))
-        self.add_item(Button(label="\u200b", style=discord.ButtonStyle.secondary, disabled=True, row=2))
 
     async def interaction_check(self, interaction: discord.Interaction):
         if interaction.data and "custom_id" in interaction.data:
