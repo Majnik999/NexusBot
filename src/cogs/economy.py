@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from discord.ui import Button, View, Select
+from discord.ui import Button, View, Select, SelectOption
 import aiosqlite
 import random
 import datetime
@@ -520,19 +520,18 @@ class Economy(commands.Cog):
         
         await ctx.send(embed=create_embed(), view=BlackjackView())
     
-    # ===================== TRADE =====================
     @economy_group.command(name="trade")
     async def trade(self, ctx, member: discord.Member = None):
+        # If no member provided — show a selection menu
         if member is None:
-            # Show user selection menu
             options = [
-                discord.SelectOption(label=m.display_name, value=str(m.id))
+                SelectOption(label=m.display_name, value=str(m.id))
                 for m in ctx.guild.members if not m.bot and m != ctx.author
             ]
             if not options:
                 return await ctx.send("❌ No one available to trade with.")
-            
-            select = Select(placeholder="Choose someone to trade with", options=options)
+
+            select = Select(placeholder="Choose someone to trade with", options=options, min_values=1, max_values=1)
 
             async def select_callback(interaction: discord.Interaction):
                 chosen_id = int(select.values[0])
@@ -547,93 +546,225 @@ class Economy(commands.Cog):
             view.add_item(select)
             return await ctx.send("👥 Select a user to trade with:", view=view)
 
-        # If user provided
+        # Provided a member
         if member.bot:
             return await ctx.send("❌ You cannot trade with bots.")
 
-        your_inv = await self.get_inventory(ctx.author.id)
-        their_inv = await self.get_inventory(member.id)
+        # Load inventories
+        your_inv = await self.get_inventory(ctx.author.id) or {}
+        their_inv = await self.get_inventory(member.id) or {}
+
         if not your_inv or not their_inv:
             return await ctx.send("❌ Both users must have items to trade.")
 
-        # Add emojis to labels
-        options = [
-            discord.SelectOption(
-                label=f"{EMOJIS.get(item, '')} {item} x{qty}".strip(),
-                value=item
-            )
+        # Build select options (show emoji if available)
+        your_options = [
+            SelectOption(label=f"{EMOJIS.get(item, '')} {item} x{qty}".strip(), value=item)
             for item, qty in your_inv.items()
         ]
-
-        options2 = [
-            discord.SelectOption(
-                label=f"{EMOJIS.get(item, '')} {item} x{qty}".strip(),
-                value=item
-            )
+        their_options = [
+            SelectOption(label=f"{EMOJIS.get(item, '')} {item} x{qty}".strip(), value=item)
             for item, qty in their_inv.items()
         ]
 
-        async def trade(your_inventory, their_inventory, your_item, their_item):
-            # make the trade logic
-            if your_item not in your_inventory or their_item not in their_inventory:
-                return False
-            await self.remove_item(ctx.author.id, your_item, 1)
-            await self.add_item(ctx.author.id, their_item, 1)
-            await self.remove_item(member.id, their_item, 1)
-            await self.add_item(member.id, your_item, 1)
-            return True
-        
-        class tradeView(View):
+        # Channel view: choose items + propose button
+        class ChannelTradeView(View):
             def __init__(self):
                 super().__init__(timeout=300)
-                
-                # start trading button
-                self.add_item(discord.ui.Button(label="Start Trading", style=discord.ButtonStyle.green), custom_id="start_trade")
-                self.add_item(discord.ui.Button(label="Cancel", style=discord.ButtonStyle.red), custom_id="cancel_trade", row=3)
-                
-            async def interaction_check(self, interaction: discord.Interaction) -> bool:
-                if interaction.user not in [ctx.author, member]:
-                    await interaction.response.send_message("❌ You are not part of this trade.", ephemeral=True)
-                    return False
-                return True
+                self.your_choice: str | None = None
+                self.their_choice: str | None = None
+                # selects
+                self.your_select = Select(placeholder="Select your item to trade", options=your_options, min_values=1, max_values=1)
+                self.their_select = Select(placeholder=f"Select {member.display_name}'s item", options=their_options, min_values=1, max_values=1)
+                self.add_item(self.your_select)
+                self.add_item(self.their_select)
 
-            async def on_button_click(self, interaction: discord.Interaction):
-                if interaction.custom_id == "start_trade":
-                    await interaction.response.edit_message(content="✅ Trade started!", view=None)
-                    completed = await trade(your_inv, their_inv, your_select.values[0], their_select.values[0])
-                    if completed: 
-                        await interaction.followup.send("✅ Trade completed successfully!")
-                    else:
-                        await interaction.followup.send("❌ Trade failed. One of you does not have the selected item.")
-                elif interaction.custom_id == "cancel_trade":
-                    await interaction.response.edit_message(content="❌ Trade cancelled.", view=None)
-                    self.stop()
+                # buttons
+                self.propose_btn = Button(label="Propose Trade", style=discord.ButtonStyle.blurple)
+                self.cancel_btn = Button(label="Cancel", style=discord.ButtonStyle.red)
+                self.add_item(self.propose_btn)
+                self.add_item(self.cancel_btn)
 
-        your_select = Select(placeholder="Select your item to trade", options=options)
-        their_select = Select(placeholder=f"Select {member.display_name}'s item", options=options2)
+                # wire callbacks
+                self.your_select.callback = self.your_select_cb
+                self.their_select.callback = self.their_select_cb
+                self.propose_btn.callback = self.propose_cb
+                self.cancel_btn.callback = self.cancel_cb
 
-        async def your_callback(interaction: discord.Interaction):
-            item = your_select.values[0]
-            emoji = EMOJIS.get(item, "")
-            await interaction.response.send_message(
-                f"You selected {emoji} {item}", ephemeral=True
-            )
+            async def your_select_cb(self, interaction: discord.Interaction):
+                # Only allow the command author to pick their item and only allow member to pick theirs
+                if interaction.user != ctx.author:
+                    await interaction.response.send_message("Only the trade initiator can pick this.", ephemeral=True)
+                    return
+                self.your_choice = self.your_select.values[0]
+                emoji = EMOJIS.get(self.your_choice, "")
+                await interaction.response.send_message(f"You selected: {emoji} {self.your_choice}", ephemeral=True)
 
-        async def their_callback(interaction: discord.Interaction):
-            item = their_select.values[0]
-            emoji = EMOJIS.get(item, "")
-            await interaction.response.send_message(
-                f"{member.display_name}'s item selected: {emoji} {item}", ephemeral=True
-            )
+            async def their_select_cb(self, interaction: discord.Interaction):
+                # Allow either user to pick target selection but typically you'd want the initiator to choose both.
+                if interaction.user not in (ctx.author, member):
+                    await interaction.response.send_message("You are not part of this trade.", ephemeral=True)
+                    return
+                self.their_choice = self.their_select.values[0]
+                emoji = EMOJIS.get(self.their_choice, "")
+                await interaction.response.send_message(f"{member.display_name}'s item selected: {emoji} {self.their_choice}", ephemeral=True)
 
-        your_select.callback = your_callback
-        their_select.callback = their_callback
+            async def cancel_cb(self, interaction: discord.Interaction):
+                if interaction.user not in (ctx.author, member):
+                    await interaction.response.send_message("You are not part of this trade.", ephemeral=True)
+                    return
+                await interaction.response.edit_message(content="❌ Trade cancelled.", view=None)
+                self.stop()
 
-        view = View()
-        view.add_item(your_select)
-        view.add_item(their_select)
-        view.add_item(tradeView())
-        await ctx.send(f"Trading items with {member.display_name}. Select items below:", view=view)
+            async def propose_cb(self, interaction: discord.Interaction):
+                # Only initiator can propose trade
+                if interaction.user != ctx.author:
+                    await interaction.response.send_message("Only the trade initiator can propose the trade.", ephemeral=True)
+                    return
+
+                # Ensure both choices selected
+                if not self.your_choice or not self.their_choice:
+                    return await interaction.response.send_message("Please select both items before proposing.", ephemeral=True)
+
+                await interaction.response.edit_message(content="🔔 Proposing trade — sending DMs for confirmation...", view=None)
+
+                # Create DM confirm views for both users
+                initiator_confirmed = asyncio.Event()
+                partner_confirmed = asyncio.Event()
+                results = {"initiator": False, "partner": False}
+
+                class DMConfirmView(View):
+                    def __init__(self, allowed_user: discord.User, role: str):
+                        super().__init__(timeout=120)
+                        self.allowed_user = allowed_user
+                        self.role = role  # 'initiator' or 'partner'
+
+                        self.accept = Button(label="Accept", style=discord.ButtonStyle.green)
+                        self.reject = Button(label="Reject", style=discord.ButtonStyle.red)
+                        self.add_item(self.accept)
+                        self.add_item(self.reject)
+
+                        self.accept.callback = self.accept_cb
+                        self.reject.callback = self.reject_cb
+
+                    async def interaction_check(self, inter: discord.Interaction) -> bool:
+                        if inter.user != self.allowed_user:
+                            await inter.response.send_message("You are not allowed to confirm this trade.", ephemeral=True)
+                            return False
+                        return True
+
+                    async def accept_cb(self, inter: discord.Interaction):
+                        results[self.role] = True
+                        await inter.response.edit_message(content="✅ You accepted the trade.", view=None)
+                        if self.role == "initiator":
+                            initiator_confirmed.set()
+                        else:
+                            partner_confirmed.set()
+                        self.stop()
+
+                    async def reject_cb(self, inter: discord.Interaction):
+                        results[self.role] = False
+                        await inter.response.edit_message(content="❌ You rejected the trade.", view=None)
+                        # set events to stop waiting
+                        if self.role == "initiator":
+                            initiator_confirmed.set()
+                        else:
+                            partner_confirmed.set()
+                        self.stop()
+
+                # Send DM to partner (must accept)
+                try:
+                    dm_msg_partner = await member.send(
+                        f"🔔 {ctx.author.display_name} wants to trade with you:\n" +
+                        f"**They offer:** {EMOJIS.get(self.your_choice,'')} {self.your_choice}\n" +
+                        f"**You offer:** {EMOJIS.get(self.their_choice,'')} {self.their_choice}\n\n" +
+                        "Click **Accept** to accept the trade or **Reject** to refuse. (120s timeout)",
+                        view=DMConfirmView(member, "partner")
+                    )
+                except discord.Forbidden:
+                    await ctx.send(f"❌ I couldn't DM {member.display_name}. They might have DMs closed.")
+                    return
+
+                # Send DM to initiator for confirmation as well
+                try:
+                    dm_msg_initiator = await ctx.author.send(
+                        f"🔔 Trade proposal sent to {member.display_name}.\n" +
+                        f"**You offer:** {EMOJIS.get(self.your_choice,'')} {self.your_choice}\n" +
+                        f"**They offer:** {EMOJIS.get(self.their_choice,'')} {self.their_choice}\n\n" +
+                        "Click **Accept** to finalize the trade (once the other user accepts). Click **Reject** to cancel. (120s timeout)",
+                        view=DMConfirmView(ctx.author, "initiator")
+                    )
+                except discord.Forbidden:
+                    await ctx.send("❌ I couldn't DM you. Please open your DMs and try again.")
+                    return
+
+                # Wait for both to make a choice or timeout
+                try:
+                    await asyncio.wait_for(asyncio.gather(
+                        initiator_confirmed.wait(),
+                        partner_confirmed.wait()
+                    ), timeout=120)
+                except asyncio.TimeoutError:
+                    # At least one user didn't respond in time
+                    await ctx.send("⏰ Trade timed out — one or both users did not confirm in time.")
+                    return
+
+                # check results
+                if not results["partner"]:
+                    await ctx.send(f"❌ {member.display_name} declined the trade.")
+                    return
+                if not results["initiator"]:
+                    await ctx.send("❌ You cancelled the trade.")
+                    return
+
+                # Both accepted -> final inventory check and swap
+                # re-fetch inventories to be safe
+                fresh_your_inv = await self.get_inventory(ctx.author.id) or {}
+                fresh_their_inv = await self.get_inventory(member.id) or {}
+
+                if fresh_your_inv.get(self.your_choice, 0) < 1 or fresh_their_inv.get(self.their_choice, 0) < 1:
+                    await ctx.send("❌ Trade failed: one of the items is no longer available.")
+                    # notify both in DM if possible
+                    try:
+                        await ctx.author.send("❌ Trade failed: one of the items is no longer available.")
+                    except discord.Forbidden:
+                        pass
+                    try:
+                        await member.send("❌ Trade failed: one of the items is no longer available.")
+                    except discord.Forbidden:
+                        pass
+                    return
+
+                # perform the item swap
+                success = False
+                try:
+                    # remove/add with your helper functions
+                    await self.remove_item(ctx.author.id, self.your_choice, 1)
+                    await self.add_item(ctx.author.id, self.their_choice, 1)
+                    await self.remove_item(member.id, self.their_choice, 1)
+                    await self.add_item(member.id, self.your_choice, 1)
+                    success = True
+                except Exception as e:
+                    # If any DB error: try to log and inform
+                    self.bot.logger.exception("Error performing trade: %s", e) if hasattr(self, "bot") and getattr(self.bot, "logger", None) else None
+                    success = False
+
+                if success:
+                    await ctx.send("✅ Trade completed successfully!")
+                    # inform both users in DM
+                    try:
+                        await ctx.author.send(f"✅ Trade with {member.display_name} completed: you received {EMOJIS.get(self.their_choice,'')} {self.their_choice}.")
+                    except discord.Forbidden:
+                        pass
+                    try:
+                        await member.send(f"✅ Trade with {ctx.author.display_name} completed: you received {EMOJIS.get(self.your_choice,'')} {self.your_choice}.")
+                    except discord.Forbidden:
+                        pass
+                else:
+                    await ctx.send("❌ Trade failed due to an internal error. Please try again later.")
+
+        channel_view = ChannelTradeView()
+        await ctx.send(f"Trading items with {member.display_name}. Select items below and press **Propose Trade** when ready:", view=channel_view)
 
 
     # leader board
@@ -743,7 +874,7 @@ class Economy(commands.Cog):
             return await ctx.send("❌ Balance cannot be negative.")
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("INSERT OR REPLACE INTO economy (user_id, balance, last_daily) VALUES (?, ?, COALESCE((SELECT last_daily FROM economy WHERE user_id = ?), NULL))",
-                             (member.id, amount, member.id))
+                            (member.id, amount, member.id))
             await db.commit()
         await ctx.send(f"✅ Set {member.mention}'s balance to {amount} coins.")
     
