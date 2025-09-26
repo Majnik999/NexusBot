@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from discord.ui import Button, View, Select, SelectOption
+from discord.ui import Button, View, Select
 import aiosqlite
 import random
 import datetime
@@ -525,7 +525,7 @@ class Economy(commands.Cog):
         # If no member provided — show a selection menu
         if member is None:
             options = [
-                SelectOption(label=m.display_name, value=str(m.id))
+                Select(label=m.display_name, value=str(m.id))
                 for m in ctx.guild.members if not m.bot and m != ctx.author
             ]
             if not options:
@@ -559,11 +559,11 @@ class Economy(commands.Cog):
 
         # Build select options (show emoji if available)
         your_options = [
-            SelectOption(label=f"{EMOJIS.get(item, '')} {item} x{qty}".strip(), value=item)
+            Select(label=f"{EMOJIS.get(item, '')} {item} x{qty}".strip(), value=item)
             for item, qty in your_inv.items()
         ]
         their_options = [
-            SelectOption(label=f"{EMOJIS.get(item, '')} {item} x{qty}".strip(), value=item)
+            Select(label=f"{EMOJIS.get(item, '')} {item} x{qty}".strip(), value=item)
             for item, qty in their_inv.items()
         ]
 
