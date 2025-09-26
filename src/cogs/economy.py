@@ -573,6 +573,42 @@ class Economy(commands.Cog):
             for item, qty in their_inv.items()
         ]
 
+        async def trade(your_inventory, their_inventory, your_item, their_item):
+            # make the trade logic
+            if your_item not in your_inventory or their_item not in their_inventory:
+                return False
+            await self.remove_item(ctx.author.id, your_item, 1)
+            await self.add_item(ctx.author.id, their_item, 1)
+            await self.remove_item(member.id, their_item, 1)
+            await self.add_item(member.id, your_item, 1)
+            return True
+        
+        class tradeView(View):
+            def __init__(self):
+                super().__init__(timeout=300)
+                
+                # start trading button
+                self.add_item(discord.ui.Button(label="Start Trading", style=discord.ButtonStyle.green), custom_id="start_trade")
+                self.add_item(discord.ui.Button(label="Cancel", style=discord.ButtonStyle.red), custom_id="cancel_trade", row=3)
+                
+            async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                if interaction.user not in [ctx.author, member]:
+                    await interaction.response.send_message("❌ You are not part of this trade.", ephemeral=True)
+                    return False
+                return True
+
+            async def on_button_click(self, interaction: discord.Interaction):
+                if interaction.custom_id == "start_trade":
+                    await interaction.response.edit_message(content="✅ Trade started!", view=None)
+                    completed = await trade(your_inv, their_inv, your_select.values[0], their_select.values[0])
+                    if completed: 
+                        await interaction.followup.send("✅ Trade completed successfully!")
+                    else:
+                        await interaction.followup.send("❌ Trade failed. One of you does not have the selected item.")
+                elif interaction.custom_id == "cancel_trade":
+                    await interaction.response.edit_message(content="❌ Trade cancelled.", view=None)
+                    self.stop()
+
         your_select = Select(placeholder="Select your item to trade", options=options)
         their_select = Select(placeholder=f"Select {member.display_name}'s item", options=options2)
 
@@ -596,6 +632,7 @@ class Economy(commands.Cog):
         view = View()
         view.add_item(your_select)
         view.add_item(their_select)
+        view.add_item(tradeView())
         await ctx.send(f"Trading items with {member.display_name}. Select items below:", view=view)
 
 
