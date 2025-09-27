@@ -6,7 +6,7 @@ import random
 import datetime
 import asyncio
 from main import logger
-from settings import PREFIX, DEFAULT_DAILY_REWARD, FISH_CATCH_CHANCE_PERCENTAGE, DAILY_COOLDOWN_HOURS, SHOP_PAGE_SIZE, EMOJIS, GAMBLE_LOSE_COLOR, GAMBLE_WIN_COLOR, DAILY_COLOR, BALANCE_COLOR, INVENTORY_COLOR, LOOT_COLOR, SELL_COLOR, HELP_COLOR, FISH_CHANCES, FISH_ITEMS, DIG_ITEMS, DIG_CHANCES, COOLDOWN_DIG_FISH_MINUTES, BLACK_JACK_SUITS, BLACK_JACK_RANKS
+from settings import PREFIX, DEFAULT_DAILY_REWARD, FISH_CATCH_CHANCE_PERCENTAGE, DAILY_COOLDOWN_HOURS, SHOP_PAGE_SIZE, EMOJIS, GAMBLE_LOSE_COLOR, GAMBLE_WIN_COLOR, DAILY_COLOR, BALANCE_COLOR, INVENTORY_COLOR, LOOT_COLOR, SELL_COLOR, HELP_COLOR, FISH_CHANCES, FISH_ITEMS, DIG_ITEMS, DIG_CHANCES, COOLDOWN_DIG_FISH_MINUTES, BLACK_JACK_SUITS, BLACK_JACK_RANKS, CHOP_NOT_FALL_TREE_CHANCE_PERCENTAGE, CHOP_ITEMS, CHOP_CHANCES
 from src.config.versions import ECONOMY_VERSION
 
 # ===================== CONFIG =====================
@@ -182,6 +182,7 @@ class Economy(commands.Cog):
         embed.add_field(name=PREFIX+"economy inventory", value="Check your inventory", inline=False)
         embed.add_field(name=PREFIX+"economy dig [times]", value="Dig for resources multiple times", inline=False)
         embed.add_field(name=PREFIX+"economy fish [times]", value="Fish for items multiple times", inline=False)
+        embed.add_field(name=PREFIX+"economy chop [times]", value="Chop for wood and items multiple times", inline=False)
         embed.add_field(name=PREFIX+"economy gamble <amount>", value="Coinflip to gamble coins", inline=False)
         embed.add_field(name=PREFIX+"economy trade [user]", value="Trade items with another user", inline=False)
         
@@ -336,7 +337,7 @@ class Economy(commands.Cog):
 
     # ===================== DIG =====================
     @economy_group.command(name="dig")
-    async def dig(self, ctx, times: int = 1):
+    async def dig(self, ctx, times: int = 10):
         cooldown_seconds = COOLDOWN_DIG_FISH_MINUTES * 60
         remaining = await self.has_user_cooldown(ctx.author.id, "dig", cooldown_seconds)
         if remaining:
@@ -376,9 +377,53 @@ class Economy(commands.Cog):
         await ctx.send(embed=embed)
 
 
+    @economy_group.command(name="chop")
+    async def chop(self, ctx, times: int = 10):
+        cooldown_seconds = COOLDOWN_DIG_FISH_MINUTES * 60
+        remaining = await self.has_user_cooldown(ctx.author.id, "chop", cooldown_seconds)
+        if remaining:
+            return await ctx.send(
+                f"❌ You are on cooldown for this command. "
+                f"Try again <t:{remaining}:R> (<t:{remaining}:T>)"
+            )
+        else:
+            await self.delete_old_record_cooldown(ctx.author.id, "chop")
+        
+        
+        await self.set_cooldown(ctx.author.id, "chop")
+        if times <= 0:
+            return await ctx.send("❌ Times must be positive.")
+        elif times >= 11:
+            return await ctx.send("❌ Maximum is 10 per command!")
+
+        possible_items = CHOP_ITEMS
+        item_weights = CHOP_CHANCES
+
+        found_items = []
+        for _ in range(times):
+            if random.randint(1, 100) > CHOP_NOT_FALL_TREE_CHANCE_PERCENTAGE:
+                found = random.choices(possible_items, weights=item_weights, k=random.randint(0, 5))
+                for item in found:
+                    await self.add_item(ctx.author.id, item, 1)
+                found_items.extend(found)
+
+        if not found_items:
+            return await ctx.send("🪓 You chopped but tree felt on you this time!")
+
+        embed = discord.Embed(title=f"🪓 You chopped {times} times and found:", color=LOOT_COLOR)
+        desc_dict = {}
+        for item in found_items:
+            desc_dict[item] = desc_dict.get(item, 0) + 1
+        embed.description = "\n".join(
+            f"{EMOJIS.get(item, '❔')} {item.capitalize()} x{qty}"
+            for item, qty in desc_dict.items()
+        )
+        embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
+        await ctx.send(embed=embed)
+    
     # ===================== FISH =====================
     @economy_group.command(name="fish")
-    async def fish(self, ctx, times: int = 1):
+    async def fish(self, ctx, times: int = 10):
         cooldown_seconds = COOLDOWN_DIG_FISH_MINUTES * 60
         remaining = await self.has_user_cooldown(ctx.author.id, "fish", cooldown_seconds)
         if remaining:
