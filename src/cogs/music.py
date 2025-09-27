@@ -21,7 +21,6 @@ class VolumeSelect(discord.ui.Select):
     def __init__(self, cog: 'Music'):
         self.cog = cog
         
-        # Create the options for 10% to 100%
         options = [
             discord.SelectOption(label=f"{i}%", value=str(i)) 
             for i in range(10, 101, 10)
@@ -40,6 +39,7 @@ class VolumeSelect(discord.ui.Select):
         try:
             new_volume = int(self.values[0])
             await vc.set_volume(new_volume)
+            # Use the interaction to immediately update the view
             await self.cog.update_panel_message(vc, interaction=interaction)
             logger.info(f"Volume set to {new_volume}%")
             
@@ -103,13 +103,11 @@ class MusicPanel(discord.ui.View):
 class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.panel_view = MusicPanel(self)
+        self.panel_view = MusicPanel(self) # This is the single, persistent instance!
         logger.info("Music cog loaded")
-        # ❌ REMOVED: self.panel_update_task.start()
 
     def cog_unload(self):
         logger.info("Music cog unloaded")
-        # ❌ REMOVED: self.panel_update_task.cancel()
 
     async def connect_to_nodes(self):
         """Connects to the Lavalink node using the correct wavelink.Pool syntax."""
@@ -154,27 +152,41 @@ class Music(commands.Cog):
         return vc, reply
         
     async def update_panel_message(self, vc: CustomPlayer, interaction: typing.Optional[discord.Interaction] = None):
-        """Builds the embed and edits the panel message, handling the select menu's placeholder."""
+        """Builds the embed and edits the panel message, ensuring view state is correct."""
         if not vc.panel_message: return
 
         new_embed = await self.build_embed(vc)
         
-        # Update the placeholder and defaults of the VolumeSelect menu
-        view_to_send = discord.ui.View.from_message(vc.panel_message) if interaction else self.panel_view
+        # 🎯 CRITICAL FIX: Always get the view from the original instance (self.panel_view) 
+        # when we are editing the message *without* an interaction.
+        # When we *have* an interaction, we let the response handle the view object.
+        view_to_send = self.panel_view
+        
+        # The logic to update the state of the view items (volume placeholder, repeat button color)
+        # must be run on the specific view instance we are about to send/edit with.
+        # If we are using an interaction (like a button click), the view passed back to us 
+        # by discord's API is the one being used. If we are doing a background edit (like track_end), 
+        # we update the persistent view.
+        
         for item in view_to_send.children:
             if isinstance(item, VolumeSelect):
+                # Update placeholder to show current volume
                 item.placeholder = f"Select Volume (Current: {vc.volume}%)"
-                if interaction:
-                    for option in item.options:
-                        option.default = (option.value == str(vc.volume))
+                # Set the current volume as the default selected option
+                for option in item.options:
+                    # We must set .default on the persistent view item *before* sending it!
+                    option.default = (option.value == str(vc.volume))
             elif item.custom_id == 'music:repeat_toggle' and isinstance(item, discord.ui.Button):
-                # Ensure the repeat button state is consistent on update
+                # Ensure the repeat button color is correct
                 item.style = discord.ButtonStyle.green if vc.repeat_track else discord.ButtonStyle.gray
-
-        
+                
+        # --- SEND/EDIT LOGIC ---
         if interaction and not interaction.response.is_done():
+            # Use interaction to edit the message, using the instance Discord provides
+            # (which is already configured by the loop above via the reference 'view_to_send' being self.panel_view)
             await interaction.response.edit_message(embed=new_embed, view=view_to_send)
         else:
+            # Use message.edit for non-interaction updates (e.g., track_end, play command)
             try:
                 await vc.panel_message.edit(embed=new_embed, view=view_to_send)
             except discord.HTTPException as e:
@@ -182,8 +194,6 @@ class Music(commands.Cog):
                     logger.error(f"Failed to edit panel message: {e}")
                 else:
                     vc.panel_message = None 
-    
-    # ❌ REMOVED: panel_update_task
         
     async def build_embed(self, vc: CustomPlayer) -> discord.Embed:
         def format_time(ms):
@@ -198,25 +208,17 @@ class Music(commands.Cog):
             """Creates a progress bar string using the current position and total length."""
             if length == 0: return ""
             
-            # Calculate the percentage completed
             percent = position / length
-            
-            # Calculate how many blocks should be filled
             filled_blocks = int(percent * bar_length)
             empty_blocks = bar_length - filled_blocks
 
-            # Bar components
             filled = "▬" * filled_blocks
             empty = "—" * empty_blocks
             
-            # Use 🔘 for the current position marker
             return f"{filled}🔘{empty}"
-
 
         if vc and vc.playing:
             track = vc.current
-            
-            # The time string will update whenever the panel is edited (button click, etc.)
             time_string = f"{format_time(vc.position)} / {format_time(track.length)}"
             progress_bar = create_progress_bar(vc.position, track.length)
             
@@ -233,7 +235,6 @@ class Music(commands.Cog):
             embed.add_field(name="Volume", value=f"{vc.volume}%", inline=True)
             embed.add_field(name="Repeat", value=repeat_status, inline=True) 
             
-            # 🎯 ADDED: Progress bar and updated time string on a single line
             embed.add_field(name="Progress", value=f"`{time_string}`\n{progress_bar}", inline=False) 
             embed.set_thumbnail(url=getattr(track, "thumbnail", None))
         else:
@@ -254,7 +255,6 @@ class Music(commands.Cog):
         player: CustomPlayer = payload.player
         current_track = payload.track
 
-        # Check for repeat state first
         if player.repeat_track and current_track:
             await player.play(current_track, start=0) 
             if player.panel_message:
@@ -300,7 +300,6 @@ class Music(commands.Cog):
         if not isinstance(interaction_or_ctx, discord.Interaction):
             await reply(f"Playback **{status}**.")
             
-
     # --- Music Command Group ---
     @commands.group(invoke_without_command=True, aliases=['m'])
     async def music(self, ctx: commands.Context):
@@ -330,7 +329,7 @@ class Music(commands.Cog):
             vc.text_channel = ctx.channel
 
         if not vc.panel_message:
-            # Send initial panel message with the view
+            # Send initial panel message with the persistent view
             vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
             # Then update the placeholder immediately after sending
             await self.update_panel_message(vc)
@@ -381,11 +380,9 @@ class Music(commands.Cog):
             try: await vc.panel_message.delete()
             except: pass
             
-        # Reinitialize the view just in case to ensure fresh state
-        self.panel_view = MusicPanel(self)
-        
+        # 🎯 FIX: Use the existing, persistent self.panel_view instance!
         vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
-        await self.update_panel_message(vc)
+        await self.update_panel_message(vc) # Update button/select colors/defaults
 
 
 async def setup(bot):
@@ -394,11 +391,13 @@ async def setup(bot):
     
     bot.loop.create_task(music_cog.connect_to_nodes())
     
+    # This block ensures persistence across bot restarts
     if not hasattr(bot, 'music_panel_view'):
         bot.music_panel_view = music_cog.panel_view
         
         for item in bot.music_panel_view.children:
             if item.custom_id == 'music:repeat_toggle' and isinstance(item, discord.ui.Button):
-                item.style = discord.ButtonStyle.gray
+                item.style = discord.ButtonStyle.gray # Default state on startup
                 
+        # Re-add the view so Discord knows to listen for its custom IDs
         bot.add_view(bot.music_panel_view)
