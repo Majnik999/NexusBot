@@ -121,8 +121,6 @@ class Music(commands.Cog):
             )
             
             await wavelink.Pool.connect(client=self.bot, nodes=[node])
-            # 🎯 UPDATED LOGGING HERE
-            logger.info(f"Lavalink Node '{node.identifier}' ready at {node.uri}")
             
         except Exception as e:
             # 🎯 UPDATED LOGGING HERE (General error, no specific guild context yet)
@@ -257,7 +255,7 @@ class Music(commands.Cog):
             await player.disconnect()
             if player.panel_message:
                 try: await player.panel_message.edit_message(content="Finished playing!", embed=None, view=None)
-                except: pass
+                except Exception as e: print("Test error for editing message") 
                 player.panel_message = None
             return
 
