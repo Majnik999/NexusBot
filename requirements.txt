@@ -4,3 +4,7 @@ pillow
 python-dotenv
 requests
 aiosqlite
+PyNaCl
+yt-dlp 
+spotipy
+wavelink
