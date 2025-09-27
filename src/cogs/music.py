@@ -41,8 +41,6 @@ class VolumeSelect(discord.ui.Select):
             await vc.set_volume(new_volume)
             # Use the interaction to immediately update the view
             await self.cog.update_panel_message(vc, interaction=interaction)
-            # 🎯 UPDATED LOGGING HERE
-            logger.info(f"[{vc.guild.name} ({vc.guild.id})] Volume set to {new_volume}%")
             
         except ValueError:
             await interaction.response.send_message("Invalid volume selection.", ephemeral=True)
@@ -105,10 +103,6 @@ class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.panel_view = MusicPanel(self) # This is the single, persistent instance!
-        logger.info("Music cog loaded")
-
-    def cog_unload(self):
-        logger.info("Music cog unloaded")
 
     async def connect_to_nodes(self):
         """Connects to the Lavalink node using the correct wavelink.Pool syntax."""
@@ -179,8 +173,7 @@ class Music(commands.Cog):
                 await vc.panel_message.edit(embed=new_embed, view=view_to_send)
             except discord.HTTPException as e:
                 if e.status != 404: 
-                    # 🎯 UPDATED LOGGING HERE
-                    logger.error(f"[{vc.guild.name} ({vc.guild.id})] Failed to edit panel message: {e}")
+                    pass
                 else:
                     vc.panel_message = None 
         
@@ -266,7 +259,6 @@ class Music(commands.Cog):
             if player.panel_message:
                 try:
                     await player.panel_message.edit(embed=finished_embed, view=None) # Set view=None to remove buttons
-                    logger.info(f"[{guild_name} ({guild_id})] Music panel updated to 'Finished playing'.")
                 except discord.HTTPException as e:
                     # Log error if editing fails (e.g., message deleted, permissions)
                     logger.warning(f"[{guild_name} ({guild_id})] Failed to edit music panel message to 'Finished playing': {e}")
@@ -283,13 +275,11 @@ class Music(commands.Cog):
                     player.panel_message = None # Clear the reference regardless of success
 
             await player.disconnect()
-            logger.info(f"[{guild_name} ({guild_id})] Disconnected due to empty queue.")
             return
 
         next_track = player.queue.get()
         await player.play(next_track)
         # 🎯 Ensure logging for actual track play after an empty queue check
-        logger.info(f"[{guild_name} ({guild_id})] Now Playing (from queue): {next_track.title}")
         if player.panel_message:
             await self.update_panel_message(player)
 
@@ -310,7 +300,6 @@ class Music(commands.Cog):
         
         await reply("Playback stopped and I left the channel!")
         # 🎯 UPDATED LOGGING HERE
-        logger.info(f"[{guild_name} ({guild_id})] Disconnected from {channel_name}")
 
     async def skip_logic(self, interaction_or_ctx):
         vc, reply = await self.get_player_and_validate(interaction_or_ctx)
@@ -355,7 +344,6 @@ class Music(commands.Cog):
             vc.text_channel = ctx.channel
             # 🎯 UPDATED LOGGING HERE
             await vc.set_volume(50) 
-            logger.info(f"[{ctx.guild.name} ({ctx.guild.id})] Connected to {vc.channel.name}")
 
 
         if not vc.panel_message:
@@ -373,14 +361,12 @@ class Music(commands.Cog):
             vc.queue.put(track)
             await ctx.send(f"**Queued:** `{track.title}` - Position **{len(vc.queue)}**")
             # 🎯 UPDATED LOGGING HERE
-            logger.info(f"[{ctx.guild.name} ({ctx.guild.id})] Queued: {track.title}")
         else:
             await vc.play(track)
             vc.set_volume()
             if vc.panel_message:
                 await self.update_panel_message(vc) 
             # 🎯 UPDATED LOGGING HERE
-            logger.info(f"[{ctx.guild.name} ({ctx.guild.id})] Now Playing: {track.title}")
             
     @music.command(name="skip", aliases=['s'])
     async def skip_cmd(self, ctx: commands.Context):
