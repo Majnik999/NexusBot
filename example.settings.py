@@ -62,3 +62,6 @@ INVENTORY_COLOR = Color.blue()
 LOOT_COLOR = Color.purple()
 SELL_COLOR = Color.orange()
 HELP_COLOR = Color.blurple()
+
+LAVALINK_URI: str = 'https://lavalink.idk.com'  # Example format without http:// or https://
+LAVALINK_PASSWORD: str = 'Password'

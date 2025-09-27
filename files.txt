@@ -16,3 +16,4 @@ src/cogs/wordle.py
 src/config/config.json
 src/config/versions.py
 src/font/arial.ttf
+src/cogs/music.py

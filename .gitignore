@@ -8,4 +8,4 @@ src/cogs/__pycache__
 src/logs/*
 economy.db
 NexusBot.code-workspace
-settings.py
+filesettings.py
