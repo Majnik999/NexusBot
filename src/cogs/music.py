@@ -363,7 +363,6 @@ class Music(commands.Cog):
             # 🎯 UPDATED LOGGING HERE
         else:
             await vc.play(track)
-            vc.set_volume()
             if vc.panel_message:
                 await self.update_panel_message(vc) 
             # 🎯 UPDATED LOGGING HERE
