@@ -3,7 +3,7 @@ from discord.ext import commands, tasks
 import wavelink
 import typing
 from main import logger 
-from settings import LAVALINK_URI, LAVALINK_PASSWORD
+from settings import LAVALINK_URI, LAVALINK_PASSWORD, PREFIX
 
 # --- 1. Custom Player Class ---
 class CustomPlayer(wavelink.Player):
@@ -50,20 +50,20 @@ class MusicPanel(discord.ui.View):
         await self.cog.pause_resume_logic(interaction) # Logic handles the pause/resume
         await self._update_panel(interaction, vc) # Update the panel immediately
 
-    @discord.ui.button(label='+10%', style=discord.ButtonStyle.blurple, custom_id='music:vol_up')
-    async def vol_up_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        vc, reply = await self.cog.get_player_and_validate(interaction)
-        if not vc: return
-        
-        await self.cog.volume_change_logic(interaction, change=10)
-        await self._update_panel(interaction, vc)
-
     @discord.ui.button(label='-10%', style=discord.ButtonStyle.blurple, custom_id='music:vol_down')
     async def vol_down_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         vc, reply = await self.cog.get_player_and_validate(interaction)
         if not vc: return
 
         await self.cog.volume_change_logic(interaction, change=-10)
+        await self._update_panel(interaction, vc)
+    
+    @discord.ui.button(label='+10%', style=discord.ButtonStyle.blurple, custom_id='music:vol_up')
+    async def vol_up_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        vc, reply = await self.cog.get_player_and_validate(interaction)
+        if not vc: return
+        
+        await self.cog.volume_change_logic(interaction, change=10)
         await self._update_panel(interaction, vc)
 
     @discord.ui.button(label='Refresh 🔄', style=discord.ButtonStyle.grey, custom_id='music:refresh_panel')
@@ -158,7 +158,7 @@ class Music(commands.Cog):
         else:
             embed = discord.Embed(
                 title="Nothing is currently playing. 🎵",
-                description="Use `!music play <song>` to start the music!",
+                description=f"Use `{PREFIX}music play <song>` to start the music!",
                 color=discord.Color.red()
             )
         return embed
@@ -196,15 +196,14 @@ class Music(commands.Cog):
             try: await vc.panel_message.delete()
             except: pass
             vc.panel_message = None
-        await reply("Playback stopped and I left the channel! 👋")
+        await reply("Playback stopped and I left the channel!")
         logger.info(f"Disconnected from {vc.channel}")
 
     async def skip_logic(self, interaction_or_ctx):
         vc, reply = await self.get_player_and_validate(interaction_or_ctx)
         # FIX: Use vc.playing
-        if not vc or not vc.playing: return await reply("Nothing is playing to skip! 🤷‍♀️")
+        if not vc or not vc.playing: return await reply("Nothing is playing to skip!")
         await vc.stop() # stop() triggers track_end, which handles the skip
-        await reply("Skipping to the next song! ⏩")
 
     async def pause_resume_logic(self, interaction_or_ctx):
         vc, reply = await self.get_player_and_validate(interaction_or_ctx)
@@ -232,7 +231,21 @@ class Music(commands.Cog):
     @commands.group(invoke_without_command=True, aliases=['m'])
     async def music(self, ctx: commands.Context):
         """Music commands group. Use subcommands like play, skip, pause, etc."""
-        await ctx.send("Use subcommands: play, skip, pause, resume, volume, queue, stop, panel")
+        embed = discord.Embed(
+            title="Music Commands",
+            description=f"Use `{PREFIX}music play <song>` to start the music!"
+        )
+        
+        embed.add_field(name=PREFIX+"music play <query>", value="Play a song or add to queue", inline=False)
+        embed.add_field(name=PREFIX+"music skip", value="Skip the current song", inline=False)
+        embed.add_field(name=PREFIX+"music pause", value="Pause the current song", inline=False)
+        embed.add_field(name=PREFIX+"music resume", value="Resume the paused song", inline=False)
+        embed.add_field(name=PREFIX+"music volume <0-100>", value="Set the volume", inline=False)
+        embed.add_field(name=PREFIX+"music stop", value="Stop playback and leave VC", inline=False)
+        embed.add_field(name=PREFIX+"music queue", value="Show the current queue", inline=False)
+        embed.add_field(name=PREFIX+"music panel", value="Show the music control panel", inline=False)
+        
+        await ctx.send(embed=embed)
 
     @music.command(name="play", aliases=["pl"])
     async def play(self, ctx: commands.Context, *, search: str):
@@ -248,7 +261,7 @@ class Music(commands.Cog):
         # 🎯 FIX: Use wavelink.Playable.search and specify the source
         tracks = await wavelink.Playable.search(search, source=wavelink.TrackSource.YouTube)
 
-        if not tracks: return await ctx.send(f"No music found for `{search}` 😔")
+        if not tracks: return await ctx.send(f"❌ No music found for `{search}`!")
         track = tracks[0]
 
         # FIX: Use vc.playing
@@ -287,7 +300,7 @@ class Music(commands.Cog):
     @music.command(name="queue", aliases=['q'])
     async def queue_cmd(self, ctx: commands.Context):
         vc: CustomPlayer = ctx.voice_client
-        if not vc or vc.queue.is_empty: return await ctx.send("Queue is empty! 😅")
+        if not vc or vc.queue.is_empty: return await ctx.send("Queue is empty!")
         queue_list = "\n".join(f"`{i+1}.` **{track.title}**" for i, track in enumerate(vc.queue[:10]))
         embed = discord.Embed(title=f"Queue ({len(vc.queue)} tracks)", description=queue_list, color=discord.Color.gold())
         await ctx.send(embed=embed)
