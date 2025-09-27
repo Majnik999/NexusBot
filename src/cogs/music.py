@@ -27,7 +27,7 @@ class VolumeSelect(discord.ui.Select):
         ]
 
         super().__init__(
-            placeholder="Select Volume (Current: ?%)",
+            placeholder="Select Volume",
             options=options,
             custom_id="music:volume_select"
         )
@@ -325,6 +325,7 @@ class Music(commands.Cog):
             vc = await ctx.author.voice.channel.connect(cls=CustomPlayer)
             vc.text_channel = ctx.channel
             # 🎯 UPDATED LOGGING HERE
+            await vc.set_volume(50) 
             logger.info(f"[{ctx.guild.name} ({ctx.guild.id})] Connected to {vc.channel.name}")
 
 
@@ -346,6 +347,7 @@ class Music(commands.Cog):
             logger.info(f"[{ctx.guild.name} ({ctx.guild.id})] Queued: {track.title}")
         else:
             await vc.play(track)
+            vc.set_volume()
             if vc.panel_message:
                 await self.update_panel_message(vc) 
             # 🎯 UPDATED LOGGING HERE
