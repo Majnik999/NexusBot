@@ -17,13 +17,13 @@ class CustomPlayer(wavelink.Player):
 
 # --- Helper Select Menu for Volume ---
 class VolumeSelect(discord.ui.Select):
-    """Dropdown menu for volume control (10% to 100%)."""
+    """Dropdown menu for volume control (5% to 100%)."""
     def __init__(self, cog: 'Music'):
         self.cog = cog
         
         options = [
             discord.SelectOption(label=f"{i}%", value=str(i)) 
-            for i in range(10, 101, 10)
+            for i in range(5, 101, 5)
         ]
 
         super().__init__(
@@ -41,7 +41,8 @@ class VolumeSelect(discord.ui.Select):
             await vc.set_volume(new_volume)
             # Use the interaction to immediately update the view
             await self.cog.update_panel_message(vc, interaction=interaction)
-            logger.info(f"Volume set to {new_volume}%")
+            # 🎯 UPDATED LOGGING HERE
+            logger.info(f"[{vc.guild.name} ({vc.guild.id})] Volume set to {new_volume}%")
             
         except ValueError:
             await interaction.response.send_message("Invalid volume selection.", ephemeral=True)
@@ -120,9 +121,11 @@ class Music(commands.Cog):
             )
             
             await wavelink.Pool.connect(client=self.bot, nodes=[node])
-            logger.info(f"Attempting to connect to Lavalink node at {node.uri}")
+            # 🎯 UPDATED LOGGING HERE
+            logger.info(f"Lavalink Node '{payload.node.identifier}' ready at {payload.node.uri}")
             
         except Exception as e:
+            # 🎯 UPDATED LOGGING HERE (General error, no specific guild context yet)
             logger.error(f"Failed to connect Lavalink node: {e}")
             
     # --- Helper Functions ---
@@ -157,16 +160,7 @@ class Music(commands.Cog):
 
         new_embed = await self.build_embed(vc)
         
-        # 🎯 CRITICAL FIX: Always get the view from the original instance (self.panel_view) 
-        # when we are editing the message *without* an interaction.
-        # When we *have* an interaction, we let the response handle the view object.
         view_to_send = self.panel_view
-        
-        # The logic to update the state of the view items (volume placeholder, repeat button color)
-        # must be run on the specific view instance we are about to send/edit with.
-        # If we are using an interaction (like a button click), the view passed back to us 
-        # by discord's API is the one being used. If we are doing a background edit (like track_end), 
-        # we update the persistent view.
         
         for item in view_to_send.children:
             if isinstance(item, VolumeSelect):
@@ -174,7 +168,6 @@ class Music(commands.Cog):
                 item.placeholder = f"Select Volume (Current: {vc.volume}%)"
                 # Set the current volume as the default selected option
                 for option in item.options:
-                    # We must set .default on the persistent view item *before* sending it!
                     option.default = (option.value == str(vc.volume))
             elif item.custom_id == 'music:repeat_toggle' and isinstance(item, discord.ui.Button):
                 # Ensure the repeat button color is correct
@@ -182,16 +175,14 @@ class Music(commands.Cog):
                 
         # --- SEND/EDIT LOGIC ---
         if interaction and not interaction.response.is_done():
-            # Use interaction to edit the message, using the instance Discord provides
-            # (which is already configured by the loop above via the reference 'view_to_send' being self.panel_view)
             await interaction.response.edit_message(embed=new_embed, view=view_to_send)
         else:
-            # Use message.edit for non-interaction updates (e.g., track_end, play command)
             try:
                 await vc.panel_message.edit(embed=new_embed, view=view_to_send)
             except discord.HTTPException as e:
                 if e.status != 404: 
-                    logger.error(f"Failed to edit panel message: {e}")
+                    # 🎯 UPDATED LOGGING HERE
+                    logger.error(f"[{vc.guild.name} ({vc.guild.id})] Failed to edit panel message: {e}")
                 else:
                     vc.panel_message = None 
         
@@ -248,6 +239,7 @@ class Music(commands.Cog):
     # --- Wavelink Listeners ---
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
+        # 🎯 UPDATED LOGGING HERE
         logger.info(f"Lavalink Node '{payload.node.identifier}' ready at {payload.node.uri}")
 
     @commands.Cog.listener()
@@ -264,7 +256,7 @@ class Music(commands.Cog):
         if player.queue.is_empty:
             await player.disconnect()
             if player.panel_message:
-                try: await player.panel_message.delete()
+                try: await player.panel_message.edit_message(content="Finished playing!", embed=None, view=None)
                 except: pass
                 player.panel_message = None
             return
@@ -278,13 +270,20 @@ class Music(commands.Cog):
     async def disconnect_logic(self, interaction_or_ctx):
         vc, reply = await self.get_player_and_validate(interaction_or_ctx)
         if not vc: return
+        
+        guild_name = vc.guild.name
+        guild_id = vc.guild.id
+        channel_name = vc.channel.name
+        
         await vc.disconnect()
         if vc.panel_message:
             try: await vc.panel_message.delete()
             except: pass
             vc.panel_message = None
+        
         await reply("Playback stopped and I left the channel!")
-        logger.info(f"Disconnected from {vc.channel}")
+        # 🎯 UPDATED LOGGING HERE
+        logger.info(f"[{guild_name} ({guild_id})] Disconnected from {channel_name}")
 
     async def skip_logic(self, interaction_or_ctx):
         vc, reply = await self.get_player_and_validate(interaction_or_ctx)
@@ -327,6 +326,9 @@ class Music(commands.Cog):
             if not ctx.author.voice: return await ctx.send("Join a VC first!")
             vc = await ctx.author.voice.channel.connect(cls=CustomPlayer)
             vc.text_channel = ctx.channel
+            # 🎯 UPDATED LOGGING HERE
+            logger.info(f"[{ctx.guild.name} ({ctx.guild.id})] Connected to {vc.channel.name}")
+
 
         if not vc.panel_message:
             # Send initial panel message with the persistent view
@@ -342,10 +344,14 @@ class Music(commands.Cog):
         if vc.playing or vc.paused: 
             vc.queue.put(track)
             await ctx.send(f"**Queued:** `{track.title}` - Position **{len(vc.queue)}**")
+            # 🎯 UPDATED LOGGING HERE
+            logger.info(f"[{ctx.guild.name} ({ctx.guild.id})] Queued: {track.title}")
         else:
             await vc.play(track)
             if vc.panel_message:
                 await self.update_panel_message(vc) 
+            # 🎯 UPDATED LOGGING HERE
+            logger.info(f"[{ctx.guild.name} ({ctx.guild.id})] Now Playing: {track.title}")
             
     @music.command(name="skip", aliases=['s'])
     async def skip_cmd(self, ctx: commands.Context):
@@ -380,7 +386,6 @@ class Music(commands.Cog):
             try: await vc.panel_message.delete()
             except: pass
             
-        # 🎯 FIX: Use the existing, persistent self.panel_view instance!
         vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
         await self.update_panel_message(vc) # Update button/select colors/defaults
 
