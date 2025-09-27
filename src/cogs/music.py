@@ -245,6 +245,9 @@ class Music(commands.Cog):
         player: CustomPlayer = payload.player
         current_track = payload.track
 
+        guild_name = player.guild.name if player.guild else "Unknown Guild"
+        guild_id = player.guild.id if player.guild else "N/A"
+        
         if player.repeat_track and current_track:
             await player.play(current_track, start=0) 
             if player.panel_message:
@@ -252,15 +255,41 @@ class Music(commands.Cog):
             return
 
         if player.queue.is_empty:
-            await player.disconnect()
+            # Prepare the "Finished playing" embed
+            finished_embed = discord.Embed(
+                title="Playback Finished! ⏹️",
+                description="The music queue is now empty. See you next time!",
+                color=discord.Color.red()
+            )
+            
+            # --- Attempt to edit the panel message ---
             if player.panel_message:
-                try: await player.panel_message.edit_message(content="Finished playing!", embed=None, view=None)
-                except Exception as e: print("Test error for editing message") 
-                player.panel_message = None
+                try:
+                    await player.panel_message.edit(embed=finished_embed, view=None) # Set view=None to remove buttons
+                    logger.info(f"[{guild_name} ({guild_id})] Music panel updated to 'Finished playing'.")
+                except discord.HTTPException as e:
+                    # Log error if editing fails (e.g., message deleted, permissions)
+                    logger.warning(f"[{guild_name} ({guild_id})] Failed to edit music panel message to 'Finished playing': {e}")
+                    # If we can't edit, try to delete if it's still there
+                    try:
+                        await player.panel_message.delete()
+                        logger.info(f"[{guild_name} ({guild_id})] Failed to edit, so deleted music panel message.")
+                    except:
+                        pass # Ignore if deletion also fails
+                except Exception as e:
+                    # Catch any other unexpected errors
+                    logger.error(f"[{guild_name} ({guild_id})] Unexpected error during panel cleanup: {e}")
+                finally:
+                    player.panel_message = None # Clear the reference regardless of success
+
+            await player.disconnect()
+            logger.info(f"[{guild_name} ({guild_id})] Disconnected due to empty queue.")
             return
 
         next_track = player.queue.get()
         await player.play(next_track)
+        # 🎯 Ensure logging for actual track play after an empty queue check
+        logger.info(f"[{guild_name} ({guild_id})] Now Playing (from queue): {next_track.title}")
         if player.panel_message:
             await self.update_panel_message(player)
 
