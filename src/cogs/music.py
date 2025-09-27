@@ -122,7 +122,7 @@ class Music(commands.Cog):
             
             await wavelink.Pool.connect(client=self.bot, nodes=[node])
             # 🎯 UPDATED LOGGING HERE
-            logger.info(f"Lavalink Node '{payload.node.identifier}' ready at {payload.node.uri}")
+            logger.info(f"Lavalink Node '{node.identifier}' ready at {node.uri}")
             
         except Exception as e:
             # 🎯 UPDATED LOGGING HERE (General error, no specific guild context yet)
