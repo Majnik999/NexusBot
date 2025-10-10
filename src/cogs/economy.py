@@ -722,8 +722,9 @@ class Economy(commands.Cog):
 
         # Views for each user's DM - they share callbacks via closure over session
         class UserTradeView(View):
-            def __init__(self, allowed_user_id: int, options: list[discord.SelectOption], is_initiator: bool):
+            def __init__(self, bot, allowed_user_id: int, options: list[discord.SelectOption], is_initiator: bool):
                 super().__init__(timeout=600)
+                self.bot = bot
                 self.allowed_user_id = allowed_user_id
                 self.is_initiator = is_initiator
 
@@ -950,7 +951,7 @@ class Economy(commands.Cog):
                     if session["partner_coins"] > 0:
                         await self.update_balance(member.id, -session["partner_coins"])
                         await self.update_balance(ctx.author.id, session["partner_coins"])
-                except Exception as e:
+                except Exception:
                     # best-effort: inform users
                     try:
                         if session["initiator_msg"]:
@@ -981,10 +982,9 @@ class Economy(commands.Cog):
                     pass
                 session["active"] = False
                 self.stop()
-
         # send DMs with views and store messages for cross-editing
-        initiator_view = UserTradeView(ctx.author.id, author_options, is_initiator=True)
-        partner_view = UserTradeView(member.id, partner_options, is_initiator=False)
+        initiator_view = UserTradeView(self.bot, ctx.author.id, author_options, is_initiator=True)
+        partner_view = UserTradeView(self.bot, member.id, partner_options, is_initiator=False)
 
         try:
             init_msg = await ctx.author.send(embed=create_trade_embed(), view=initiator_view)
