@@ -269,15 +269,6 @@ class OwnerCommands(commands.Cog):
         entries = []
         for guild in guilds:
             invite_url = "No invite available"
-            # Try to create invite from text channels
-            for channel in guild.text_channels:
-                try:
-                    if channel.permissions_for(guild.me).create_instant_invite:
-                        invite = await channel.create_invite(max_age=0)
-                        invite_url = invite.url
-                        break
-                except:
-                    continue
 
             entry = {
                 "name": guild.name,
