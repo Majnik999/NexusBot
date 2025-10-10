@@ -341,11 +341,6 @@ class OwnerCommands(commands.Cog):
                 except Exception:
                     pass
                 self.stop()
-            @discord.ui.button(label="Why are you sometimes dum", style=discord.ButtonStyle.primary)
-            @discord.ui.button(label="Why are you sometimes dum", style=discord.ButtonStyle.primary)
-            async def why(self, _button: discord.ui.Button, interaction: discord.Interaction):
-                # playful owner-only explanation; ephemeral so only owner sees it
-                await interaction.response.send_message("I'm a bot — sometimes I do weird things due to rate limits, missing intents/permissions, or edge cases in code. If something's broken, please report with logs.", ephemeral=True)
             async def on_timeout(self):
                 # disable buttons on timeout and update message embed footer
                 for child in self.children:
