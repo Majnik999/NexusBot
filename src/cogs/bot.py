@@ -258,104 +258,72 @@ class OwnerCommands(commands.Cog):
     @botgroup.command(name="servers", hidden=True)
     @commands.is_owner()
     async def servers(self, ctx):
-        """
-        Shows all servers the bot is on in pages of 10. Owner-only.
-        """
+        """Shows all servers the bot is in with pagination"""
+        # Sort guilds by member count
         guilds = sorted(self.bot.guilds, key=lambda g: g.member_count, reverse=True)
         if not guilds:
-            await ctx.send("ℹ️ Bot is not in any servers.")
+            await ctx.send("Bot is not in any servers.")
             return
 
-        # gather info (attempt to build invite for each guild if possible)
+        # Create entries list
         entries = []
-        for g in guilds:
-            info = {
-                "name": g.name,
-                "id": g.id,
-                "members": g.member_count,
-                "owner_id": getattr(g.owner_id, "__int__", lambda: g.owner_id)() if hasattr(g, "owner_id") else None,
-                "invite": "No invite / missing perms"
+        for guild in guilds:
+            entry = {
+                "name": guild.name,
+                "id": guild.id, 
+                "members": guild.member_count,
+                "owner_id": guild.owner_id
             }
-            # try to find a text channel where bot can create invites
-            try:
-                ch = next((c for c in g.text_channels if c.permissions_for(g.me).create_instant_invite), None)
-                if ch:
-                    inv = await ch.create_invite(max_age=0, max_uses=0, unique=False)
-                    info["invite"] = str(inv)
-            except Exception:
-                # keep default "No invite / missing perms"
-                pass
-            entries.append(info)
+            entries.append(entry)
 
-        # pagination
+        # Pagination setup
         per_page = 10
         pages = [entries[i:i+per_page] for i in range(0, len(entries), per_page)]
-        current = 0
 
-        def make_embed(page_index: int):
-            emb = discord.Embed(
-                title=f"Servers ({len(entries)})",
-                description=f"Page {page_index+1}/{len(pages)} — Showing {len(pages[page_index])} server(s)",
-                color=discord.Color.blurple()
+        # Create embed
+        def create_embed(page_num):
+            embed = discord.Embed(
+                title=f"Servers ({len(entries)} total)",
+                description=f"Page {page_num+1}/{len(pages)}",
+                color=discord.Color.blue()
             )
-            for idx, e in enumerate(pages[page_index], start=1 + page_index*per_page):
-                name_line = f"{idx}. {e['name']}"
-                value = f"ID: `{e['id']}`\nMembers: `{e['members']}`\nOwner ID: `{e.get('owner_id')}`\nInvite: {e['invite']}"
-                emb.add_field(name=name_line, value=value, inline=False)
-            emb.set_footer(text=f"Requested by {ctx.author} • Use ◀️ ▶️ to navigate, ⏹️ to stop")
-            return emb
+            
+            for i, guild in enumerate(pages[page_num], start=1 + page_num*per_page):
+                embed.add_field(
+                    name=f"{i}. {guild['name']}", 
+                    value=f"ID: `{guild['id']}`\nMembers: `{guild['members']}`\nOwner ID: `{guild['owner_id']}`",
+                    inline=False
+                )
+            return embed
 
-        # create view-based pager with buttons
-        class ServerListView(discord.ui.View):
-            def __init__(self, author_id, pages, make_embed, timeout=120.0):
-                super().__init__(timeout=timeout)
-                self.author_id = author_id
-                self.pages = pages
-                self.make_embed = make_embed
-                self.current = 0
-                self.message = None
+        # Create view with buttons
+        class Buttons(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=60)
+                self.page = 0
 
-            async def interaction_check(self, interaction: discord.Interaction) -> bool:
-                if interaction.user.id != self.author_id:
-                    await interaction.response.send_message("❌ You are not allowed to use these controls.", ephemeral=True)
-                    return False
-                return True
+            @discord.ui.button(label="◀", style=discord.ButtonStyle.primary)
+            async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
+                if interaction.user != ctx.author:
+                    return
+                self.page = (self.page - 1) % len(pages)
+                await interaction.response.edit_message(embed=create_embed(self.page))
 
-            @discord.ui.button(label="◀️", style=discord.ButtonStyle.secondary)
-            @discord.ui.button(label="◀️", style=discord.ButtonStyle.secondary)
-            async def previous(self, _button: discord.ui.Button, interaction: discord.Interaction):
-                self.current = (self.current - 1) % len(self.pages)
-                await interaction.response.edit_message(embed=self.make_embed(self.current), view=self)
-            @discord.ui.button(label="▶️", style=discord.ButtonStyle.secondary)
-            @discord.ui.button(label="▶️", style=discord.ButtonStyle.secondary)
-            async def next(self, _button: discord.ui.Button, interaction: discord.Interaction):
-                self.current = (self.current + 1) % len(self.pages)
-                await interaction.response.edit_message(embed=self.make_embed(self.current), view=self)
-            @discord.ui.button(label="⏹️", style=discord.ButtonStyle.danger)
-            @discord.ui.button(label="⏹️", style=discord.ButtonStyle.danger)
-            async def stop(self, _button: discord.ui.Button, interaction: discord.Interaction):
-                for child in self.children:
-                    child.disabled = True
-                try:
-                    await interaction.response.edit_message(view=self)
-                except Exception:
-                    pass
-                self.stop()
-            async def on_timeout(self):
-                # disable buttons on timeout and update message embed footer
-                for child in self.children:
-                    child.disabled = True
-                try:
-                    emb = self.make_embed(self.current)
-                    emb.set_footer(text="Session timed out")
-                    if self.message:
-                        await self.message.edit(embed=emb, view=self)
-                except Exception:
-                    pass
+            @discord.ui.button(label="▶", style=discord.ButtonStyle.primary) 
+            async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+                if interaction.user != ctx.author:
+                    return
+                self.page = (self.page + 1) % len(pages)
+                await interaction.response.edit_message(embed=create_embed(self.page))
 
-        view = ServerListView(ctx.author.id, pages, make_embed)
-        msg = await ctx.send(embed=make_embed(current), view=view)
-        view.message = msg
+            @discord.ui.button(label="❌", style=discord.ButtonStyle.danger)
+            async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
+                if interaction.user != ctx.author:
+                    return
+                await interaction.message.delete()
+
+        view = Buttons()
+        await ctx.send(embed=create_embed(0), view=view)
 
 async def setup(bot):
     await bot.add_cog(OwnerCommands(bot))
