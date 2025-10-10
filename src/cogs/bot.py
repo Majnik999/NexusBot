@@ -257,7 +257,7 @@ class OwnerCommands(commands.Cog):
     # add servers listing (owner-only)
     @botgroup.command(name="servers", hidden=True)
     @commands.is_owner()
-    async def bot_servers(self, ctx):
+    async def servers(self, ctx):
         """
         Shows all servers the bot is on in pages of 10. Owner-only.
         """
