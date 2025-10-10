@@ -7,7 +7,7 @@ from settings import CLEAR_COMMAND, INVITE_LINK
 # This is our single source of truth for all categories + commands + descriptions
 HELP_DATA = {
     "fun": {
-        "description": "🎲 Fun commands like jokes and memes",
+        "description": "🎲 Fun commands like **MUSIC** jokes and memes",
         "commands": {
             PREFIX + "joke help": "Tells a random joke",
             PREFIX + "meme <count> <subreddit>": "Sends a random meme / send a requested meme with parameters",
@@ -16,6 +16,7 @@ HELP_DATA = {
             PREFIX + "wordle help": "Play wordle game",
             PREFIX + "maze help": "Play maze game",
             PREFIX + "eco help": "Economy system!",
+            PREFIX + "music help": "Music commands",
         }
     },
     "moderation": {
@@ -25,7 +26,7 @@ HELP_DATA = {
         }
     },
     "utility": {
-        "description": "🔧 Helpful tools like reminders",
+        "description": "🔧 Helpful tools",
         "commands": {
             PREFIX + "profile": "Get your profile info",
             PREFIX + "profile pic": "Get your profile picture",
