@@ -832,12 +832,14 @@ class Economy(commands.Cog):
 
                 # Send confirmation to partner with accept/reject buttons
                 confirm_embed = discord.Embed(title="🔔 Trade Confirmation Request", color=BALANCE_COLOR)
+                initiator_offers_text = 'None' if not session['initiator_items'] else '\n'.join(session['initiator_items'])
+                partner_requests_text = 'None' if not session['partner_items'] else '\n'.join(session['partner_items'])
                 confirm_embed.description = (
                     f"{ctx.author.display_name} proposes a trade:\n\n"
                     f"**They offer:**\n"
-                    f"{'None' if not session['initiator_items'] else '\n'.join(session['initiator_items'])}\nCoins: {session['initiator_coins']}\n\n"
+                    f"{initiator_offers_text}\nCoins: {session['initiator_coins']}\n\n"
                     f"**They request from you:**\n"
-                    f"{'None' if not session['partner_items'] else '\n'.join(session['partner_items'])}\nCoins: {session['partner_coins']}\n\n"
+                    f"{partner_requests_text}\nCoins: {session['partner_coins']}\n\n"
                     "Click Accept to accept the trade or Reject to decline. (60s)"
                 )
 
