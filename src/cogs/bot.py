@@ -258,7 +258,7 @@ class OwnerCommands(commands.Cog):
     @botgroup.command(name="servers", hidden=True)
     @commands.is_owner()
     async def servers(self, ctx):
-        """Shows all servers the bot is in with pagination"""
+        """Shows all servers the bot is in with pagination and invite links"""
         # Sort guilds by member count
         guilds = sorted(self.bot.guilds, key=lambda g: g.member_count, reverse=True)
         if not guilds:
@@ -268,11 +268,19 @@ class OwnerCommands(commands.Cog):
         # Create entries list
         entries = []
         for guild in guilds:
+            try:
+                # Try to create an invite that never expires
+                invite = await guild.channels[0].create_invite(max_age=0)
+                invite_url = invite.url
+            except:
+                invite_url = "Cannot create invite"
+
             entry = {
                 "name": guild.name,
                 "id": guild.id, 
                 "members": guild.member_count,
-                "owner_id": guild.owner_id
+                "owner_id": guild.owner_id,
+                "invite": invite_url
             }
             entries.append(entry)
 
@@ -291,7 +299,7 @@ class OwnerCommands(commands.Cog):
             for i, guild in enumerate(pages[page_num], start=1 + page_num*per_page):
                 embed.add_field(
                     name=f"{i}. {guild['name']}", 
-                    value=f"ID: `{guild['id']}`\nMembers: `{guild['members']}`\nOwner ID: `{guild['owner_id']}`",
+                    value=f"ID: `{guild['id']}`\nMembers: `{guild['members']}`\nOwner ID: `{guild['owner_id']}`\nInvite: {guild['invite']}",
                     inline=False
                 )
             return embed
