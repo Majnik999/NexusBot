@@ -19,10 +19,12 @@ class Economy(commands.Cog):
 
     # ================= INITIALIZATION =================
     async def cog_load(self):
+        logger.info("Cog load started")
         await self.initialize_database()
-        logger.info("[Economy] Database initialized")
+        logger.info("Cog load finished and database initialized")
 
     async def initialize_database(self):
+        logger.info("Initializing database")
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS economy (
@@ -56,6 +58,7 @@ class Economy(commands.Cog):
 
             
             await db.commit()
+        logger.debug("Database schema ensured")
 
     # ================= HELPER FUNCTIONS =================
     async def get_cooldown(self, user_id: int, command: str) -> int:
@@ -65,7 +68,9 @@ class Economy(commands.Cog):
                 (user_id, command),
             ) as cursor:
                 row = await cursor.fetchone()
-                return row[0] if row else 0
+                result = row[0] if row else 0
+                logger.debug(f"get_cooldown user={user_id} command={command} -> {result}")
+                return result
 
     async def set_cooldown(self, user_id: int, command: str):
         now = int(datetime.datetime.utcnow().timestamp())
@@ -75,11 +80,13 @@ class Economy(commands.Cog):
                 (user_id, command, now),
             )
             await db.commit()
+        logger.debug(f"set_cooldown user={user_id} command={command} at={now}")
 
     async def delete_old_record_cooldown(self, user_id: int, command: str):
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("DELETE FROM cooldowns WHERE user_id = ? AND command = ?", (user_id, command))
             await db.commit()
+        logger.debug(f"delete_old_record_cooldown user={user_id} command={command}")
 
     async def has_user_cooldown(
         self, user_id: int, command: str, cooldown_seconds: int
@@ -87,16 +94,21 @@ class Economy(commands.Cog):
         last_used = await self.get_cooldown(user_id, command)
         now = int(datetime.datetime.utcnow().timestamp())
         if (now - last_used) < cooldown_seconds:
-            return last_used + cooldown_seconds  # expiry timestamp
+            expiry = last_used + cooldown_seconds
+            logger.info(f"cooldown active user={user_id} command={command} expires={expiry}")
+            return expiry  # expiry timestamp
+        logger.debug(f"no cooldown user={user_id} command={command}")
         return None
 
     async def clear_cooldowns(self, user_id: int):
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("DELETE FROM cooldowns WHERE user_id = ?", (user_id,))
             await db.commit()
+        logger.info(f"clear_cooldowns for user={user_id}")
     
     async def get_balance(self, user_id: int) -> int:
         if user_id == self.bot.user.id:
+            logger.debug(f"get_balance requested for bot user {user_id}, returning 0")
             return 0
         async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute("SELECT balance FROM economy WHERE user_id = ?", (user_id,)) as cursor:
@@ -105,7 +117,9 @@ class Economy(commands.Cog):
                     await db.execute("INSERT INTO economy (user_id, balance, last_daily) VALUES (?, ?, ?)",
                                      (user_id, 0, None))
                     await db.commit()
+                    logger.info(f"Created economy row for user={user_id} with balance=0")
                     return 0
+                logger.debug(f"get_balance user={user_id} -> {row[0]}")
                 return row[0]
 
     async def update_balance(self, user_id: int, amount: int):
@@ -114,6 +128,7 @@ class Economy(commands.Cog):
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE economy SET balance = ? WHERE user_id = ?", (new_balance, user_id))
             await db.commit()
+        logger.info(f"update_balance user={user_id} change={amount} old={balance} new={new_balance}")
 
     async def get_inventory(self, user_id: int) -> dict:
         items = {}
@@ -121,6 +136,7 @@ class Economy(commands.Cog):
             async with db.execute("SELECT item, quantity FROM inventory WHERE user_id = ?", (user_id,)) as cursor:
                 async for item, qty in cursor:
                     items[item] = qty
+        logger.debug(f"get_inventory user={user_id} -> {items}")
         return items
 
     async def add_item(self, user_id: int, item: str, qty: int = 1):
@@ -131,9 +147,11 @@ class Economy(commands.Cog):
                 if row:
                     await db.execute("UPDATE inventory SET quantity = quantity + ? WHERE user_id = ? AND item = ?",
                                      (qty, user_id, item))
+                    logger.debug(f"add_item increment user={user_id} item={item} qty={qty}")
                 else:
                     await db.execute("INSERT INTO inventory (user_id, item, quantity) VALUES (?, ?, ?)",
                                      (user_id, item, qty))
+                    logger.debug(f"add_item insert user={user_id} item={item} qty={qty}")
             await db.commit()
 
     async def remove_item(self, user_id: int, item: str, qty: int = 1) -> bool:
@@ -142,6 +160,7 @@ class Economy(commands.Cog):
             async with db.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item = ?", (user_id, item)) as cursor:
                 row = await cursor.fetchone()
                 if not row or row[0] < qty:
+                    logger.info(f"remove_item failed user={user_id} item={item} requested={qty} available={(row[0] if row else 0)}")
                     return False
                 new_qty = row[0] - qty
                 if new_qty == 0:
@@ -150,6 +169,7 @@ class Economy(commands.Cog):
                     await db.execute("UPDATE inventory SET quantity = ? WHERE user_id = ? AND item = ?",
                                      (new_qty, user_id, item))
             await db.commit()
+        logger.debug(f"remove_item success user={user_id} item={item} qty={qty} remaining={new_qty if 'new_qty' in locals() else 0}")
         return True
 
     async def fetch_shop_items(self) -> dict:
@@ -158,12 +178,15 @@ class Economy(commands.Cog):
             async with db.execute("SELECT item_id, name, price FROM shop_items") as cursor:
                 async for item_id, name, price in cursor:
                     items[item_id] = {"name": name, "price": price}
+        logger.debug(f"fetch_shop_items -> {len(items)} items")
         return items
 
     async def fetch_leaderboard(self) -> list[tuple[int, int]]:
         async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute("SELECT user_id, balance FROM economy ORDER BY balance DESC LIMIT 10") as cursor:
-                return await cursor.fetchall()
+                rows = await cursor.fetchall()
+        logger.debug(f"fetch_leaderboard -> {len(rows)} rows")
+        return rows
 
     # ===================== ECONOMY GROUP =====================
     @commands.group(name="economy", aliases=["eco"], invoke_without_command=True)
@@ -364,6 +387,7 @@ class Economy(commands.Cog):
             for item in found:
                 await self.add_item(ctx.author.id, item, 1)
             found_items.extend(found)
+        logger.info(f"dig results user={ctx.author.id} found={len(found_items)} items")
 
         embed = discord.Embed(title=f"⛏️ You dug {times} times and found:", color=LOOT_COLOR)
         desc_dict = {}
@@ -379,6 +403,7 @@ class Economy(commands.Cog):
 
     @economy_group.command(name="chop")
     async def chop(self, ctx, times: int = 10):
+        logger.info(f"Command: chop by user={ctx.author.id} times={times}")
         cooldown_seconds = COOLDOWN_DIG_FISH_MINUTES * 60
         remaining = await self.has_user_cooldown(ctx.author.id, "chop", cooldown_seconds)
         if remaining:
@@ -408,7 +433,9 @@ class Economy(commands.Cog):
                 found_items.extend(found)
 
         if not found_items:
+            logger.info(f"chop found nothing user={ctx.author.id}")
             return await ctx.send("🪓 You chopped but tree felt on you this time!")
+        logger.info(f"chop results user={ctx.author.id} found={len(found_items)} items")
 
         embed = discord.Embed(title=f"🪓 You chopped {times} times and found:", color=LOOT_COLOR)
         desc_dict = {}
@@ -424,6 +451,7 @@ class Economy(commands.Cog):
     # ===================== FISH =====================
     @economy_group.command(name="fish")
     async def fish(self, ctx, times: int = 10):
+        logger.info(f"Command: fish by user={ctx.author.id} times={times}")
         cooldown_seconds = COOLDOWN_DIG_FISH_MINUTES * 60
         remaining = await self.has_user_cooldown(ctx.author.id, "fish", cooldown_seconds)
         if remaining:
@@ -452,7 +480,9 @@ class Economy(commands.Cog):
                 caught_items.extend(caught)
 
         if not caught_items:
+            logger.info(f"fish caught nothing user={ctx.author.id}")
             return await ctx.send("🎣 You fished but didn't catch anything this time!")
+        logger.info(f"fish results user={ctx.author.id} caught={len(caught_items)} fish")
 
         embed = discord.Embed(title=f"🎣 You fished {times} times and caught:", color=LOOT_COLOR)
         desc_dict = {}
@@ -470,15 +500,18 @@ class Economy(commands.Cog):
     # ===================== GAMBLE =====================
     @economy_group.command(name="coinflip", aliases=["cf"])
     async def coinflip(self, ctx, amount: int):
+        logger.info(f"Command: coinflip by user={ctx.author.id} amount={amount}")
         if amount <= 0:
             return await ctx.send("❌ Amount must be positive.")
         balance = await self.get_balance(ctx.author.id)
         if balance < amount:
+            logger.info(f"coinflip insufficient funds user={ctx.author.id} balance={balance} bet={amount}")
             return await ctx.send("❌ Not enough coins.")
         won = random.choice([True, False])
         if won:
             amount = amount*2
         await self.update_balance(ctx.author.id, amount if won else -amount)
+        logger.info(f"coinflip result user={ctx.author.id} won={won} change={amount if won else -amount}")
         embed = discord.Embed(title="🎲 Coinflip", description=f"You {'won' if won else 'lost'} {amount} coins!", color=GAMBLE_WIN_COLOR if won else GAMBLE_LOSE_COLOR)
         embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
         await ctx.send(embed=embed)
@@ -486,11 +519,16 @@ class Economy(commands.Cog):
     # black jack with buttons
     @economy_group.command(name="blackjack", aliases=["bj"])
     async def blackjack(self, ctx, amount: int):
+        logger.info(f"Command: blackjack by user={ctx.author.id} amount={amount}")
         if amount <= 0:
             return await ctx.send("❌ Amount must be positive.")
         balance = await self.get_balance(ctx.author.id)
         if balance < amount:
             return await ctx.send("❌ Not enough coins.")
+
+        # TAKE THE BET UP-FRONT
+        await self.update_balance(ctx.author.id, -amount)
+        logger.info(f"blackjack bet taken user={ctx.author.id} bet={amount}")
 
         suits = BLACK_JACK_SUITS
         ranks = BLACK_JACK_RANKS
@@ -539,14 +577,22 @@ class Economy(commands.Cog):
                 super().__init__(timeout=120)
                 self.result = None
 
+            async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                if interaction.user.id != ctx.author.id:
+                    await interaction.response.send_message("You are not allowed to use this control.", ephemeral=True)
+                    return False
+                return True
+
             @discord.ui.button(label="Hit", style=discord.ButtonStyle.primary)
             async def hit(self, interaction: discord.Interaction, button: Button):
                 player_hand.append(deck.pop())
                 player_total = calculate_hand(player_hand)
                 if player_total > 21:
                     self.result = "lose"
+                    await interaction.response.edit_message(embed=create_embed(final=True), view=self)
                     self.stop()
-                await interaction.response.edit_message(embed=create_embed())
+                    return
+                await interaction.response.edit_message(embed=create_embed(), view=self)
 
             @discord.ui.button(label="Stand", style=discord.ButtonStyle.success)
             async def stand(self, interaction: discord.Interaction, button: Button):
@@ -560,13 +606,40 @@ class Economy(commands.Cog):
                     self.result = "lose"
                 else:
                     self.result = "draw"
+                await interaction.response.edit_message(embed=create_embed(final=True), view=self)
                 self.stop()
-                await interaction.response.edit_message(embed=create_embed(final=True))
         
-        await ctx.send(embed=create_embed(), view=BlackjackView())
-    
+        view = BlackjackView()
+        await ctx.send(embed=create_embed(), view=view)
+        await view.wait()
+
+        res = view.result
+        # TIMEOUT: refund bet
+        if res is None:
+            await self.update_balance(ctx.author.id, amount)
+            logger.info(f"blackjack timeout - bet refunded user={ctx.author.id} bet={amount}")
+            return await ctx.send("⏰ Game timed out. Your bet has been refunded.")
+
+        # SETTLE
+        if res == "win":
+            # pay back stake + winnings: since stake already deducted, give 2*amount to net +amount
+            await self.update_balance(ctx.author.id, amount * 2)
+            await ctx.send(f"✅ You won {amount} coins!")
+            logger.info(f"blackjack win user={ctx.author.id} bet={amount}")
+        elif res == "lose":
+            # bet already taken, nothing to do
+            await ctx.send(f"❌ You lost {amount} coins.")
+            logger.info(f"blackjack lose user={ctx.author.id} bet={amount}")
+        else:  # draw
+            await self.update_balance(ctx.author.id, amount)
+            await ctx.send("It's a draw! Your bet has been returned.")
+            logger.info(f"blackjack draw - bet returned user={ctx.author.id} bet={amount}")
+
+        logger.debug(f"blackjack finished user={ctx.author.id} result={res}")
+
     @economy_group.command(name="trade")
     async def trade(self, ctx, member: discord.Member = None):
+        logger.info(f"Command: trade invoked by user={ctx.author.id} target={(member.id if member else None)}")
         # If no member provided — show a selection menu
         if member is None:
             options = [
@@ -595,226 +668,352 @@ class Economy(commands.Cog):
         if member.bot:
             return await ctx.send("❌ You cannot trade with bots.")
 
-        # Load inventories
+        # --- New DM-based real-time trade session implementation ---
+        # Fetch inventories (allow trades with coins only as well)
         your_inv = await self.get_inventory(ctx.author.id) or {}
         their_inv = await self.get_inventory(member.id) or {}
 
-        if not your_inv or not their_inv:
-            return await ctx.send("❌ Both users must have items to trade.")
+        # Ensure DMs open for both
+        try:
+            dm_author = await ctx.author.create_dm()
+            dm_partner = await member.create_dm()
+            await dm_author.send("🔔 Preparing trade panel... (this is a quick check)", delete_after=1)
+            await dm_partner.send("🔔 Preparing trade panel... (this is a quick check)", delete_after=1)
+            logger.debug(f"DMs opened for trade initiator={ctx.author.id} partner={member.id}")
+        except Exception:
+            logger.exception(f"trade failed to open DMs initiator={ctx.author.id} partner={(member.id if member else None)}")
+            return await ctx.send("❌ Could not open DMs with one or both users. Ensure DMs are open and try again.")
 
-        # Build select options (show emoji if available)
-        your_options = [
-            Select(label=f"{EMOJIS.get(item, '')} {item} x{qty}".strip(), value=item)
-            for item, qty in your_inv.items()
-        ]
-        their_options = [
-            Select(label=f"{EMOJIS.get(item, '')} {item} x{qty}".strip(), value=item)
-            for item, qty in their_inv.items()
-        ]
+        # Build select options for each user
+        def build_item_options(inv: dict):
+            if not inv:
+                return [discord.SelectOption(label="No items available", value="__none__", description="You have no items", default=True, emoji=None,)]
+            opts = []
+            for item, qty in inv.items():
+                label = f"{item} x{qty}"
+                opts.append(discord.SelectOption(label=label, value=item))
+            return opts
 
-        # Channel view: choose items + propose button
-        class ChannelTradeView(View):
-            def __init__(self):
-                super().__init__(timeout=300)
-                self.your_choice: str | None = None
-                self.their_choice: str | None = None
-                # selects
-                self.your_select = Select(placeholder="Select your item to trade", options=your_options, min_values=1, max_values=1)
-                self.their_select = Select(placeholder=f"Select {member.display_name}'s item", options=their_options, min_values=1, max_values=1)
-                self.add_item(self.your_select)
-                self.add_item(self.their_select)
+        author_options = build_item_options(your_inv)
+        partner_options = build_item_options(their_inv)
 
-                # buttons
-                self.propose_btn = Button(label="Propose Trade", style=discord.ButtonStyle.blurple)
-                self.cancel_btn = Button(label="Cancel", style=discord.ButtonStyle.red)
-                self.add_item(self.propose_btn)
+        # Shared session state
+        session = {
+            "initiator": ctx.author.id,
+            "partner": member.id,
+            "initiator_items": [],  # list of item ids
+            "partner_items": [],
+            "initiator_coins": 0,
+            "partner_coins": 0,
+            "initiator_msg": None,
+            "partner_msg": None,
+            "active": True
+        }
+
+        def create_trade_embed():
+            embed = discord.Embed(title="🔁 Trade Panel", color=BALANCE_COLOR)
+            # initiator side
+            initiator_items_display = "None" if not session["initiator_items"] else "\n".join(f"{EMOJIS.get(i,'❔')} {i} x{(your_inv.get(i,0))}" for i in session["initiator_items"])
+            partner_items_display = "None" if not session["partner_items"] else "\n".join(f"{EMOJIS.get(i,'❔')} {i} x{(their_inv.get(i,0))}" for i in session["partner_items"])
+            embed.add_field(name=f"{ctx.author.display_name} offers", value=f"Items:\n{initiator_items_display}\nCoins: {session['initiator_coins']}", inline=True)
+            embed.add_field(name=f"{member.display_name} offers", value=f"Items:\n{partner_items_display}\nCoins: {session['partner_coins']}", inline=True)
+            embed.set_footer(text="Select items and set coins. Initiator must press 'Propose Trade' to request confirmation.")
+            return embed
+
+        # Views for each user's DM - they share callbacks via closure over session
+        class UserTradeView(View):
+            def __init__(self, allowed_user_id: int, options: list[discord.SelectOption], is_initiator: bool):
+                super().__init__(timeout=600)
+                self.allowed_user_id = allowed_user_id
+                self.is_initiator = is_initiator
+
+                # item select (allow multi select)
+                if options and not (len(options) == 1 and options[0].value == "__none__"):
+                    self.item_select = Select(placeholder="Select items to offer (multiple allowed)", options=options, min_values=0, max_values=len(options))
+                    self.add_item(self.item_select)
+                    self.item_select.callback = self.on_select_items
+                else:
+                    # disabled select to show no items
+                    self.item_select = None
+
+                # coin setter button
+                self.set_coins_btn = Button(label="Set Coins", style=discord.ButtonStyle.primary)
+                self.cancel_btn = Button(label="Cancel Trade", style=discord.ButtonStyle.red)
+                # Initiator has propose button
+                if is_initiator:
+                    self.propose_btn = Button(label="Propose Trade", style=discord.ButtonStyle.green)
+                    self.add_item(self.propose_btn)
+                    self.propose_btn.callback = self.on_propose
+
+                self.add_item(self.set_coins_btn)
                 self.add_item(self.cancel_btn)
 
-                # wire callbacks
-                self.your_select.callback = self.your_select_cb
-                self.their_select.callback = self.their_select_cb
-                self.propose_btn.callback = self.propose_cb
-                self.cancel_btn.callback = self.cancel_cb
+                self.set_coins_btn.callback = self.on_set_coins
+                self.cancel_btn.callback = self.on_cancel
 
-            async def your_select_cb(self, interaction: discord.Interaction):
-                # Only allow the command author to pick their item and only allow member to pick theirs
-                if interaction.user != ctx.author:
-                    await interaction.response.send_message("Only the trade initiator can pick this.", ephemeral=True)
-                    return
-                self.your_choice = self.your_select.values[0]
-                emoji = EMOJIS.get(self.your_choice, "")
-                await interaction.response.send_message(f"You selected: {emoji} {self.your_choice}", ephemeral=True)
+            async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                if interaction.user.id != self.allowed_user_id:
+                    await interaction.response.send_message("You are not allowed to use this control.", ephemeral=True)
+                    return False
+                return True
 
-            async def their_select_cb(self, interaction: discord.Interaction):
-                # Allow either user to pick target selection but typically you'd want the initiator to choose both.
-                if interaction.user not in (ctx.author, member):
-                    await interaction.response.send_message("You are not part of this trade.", ephemeral=True)
-                    return
-                self.their_choice = self.their_select.values[0]
-                emoji = EMOJIS.get(self.their_choice, "")
-                await interaction.response.send_message(f"{member.display_name}'s item selected: {emoji} {self.their_choice}", ephemeral=True)
+            async def on_select_items(self, interaction: discord.Interaction):
+                # update session with selected items for the interacting user
+                if self.is_initiator:
+                    session["initiator_items"] = list(self.item_select.values)
+                else:
+                    session["partner_items"] = list(self.item_select.values)
+                # edit both DM messages if present
+                embed = create_trade_embed()
+                if session["initiator_msg"]:
+                    try:
+                        await session["initiator_msg"].edit(embed=embed, view=session["initiator_msg"].components and session["initiator_msg"].components[0])
+                    except Exception:
+                        pass
+                if session["partner_msg"]:
+                    try:
+                        await session["partner_msg"].edit(embed=embed, view=session["partner_msg"].components and session["partner_msg"].components[0])
+                    except Exception:
+                        pass
+                await interaction.response.send_message("✅ Selection updated.", ephemeral=True)
 
-            async def cancel_cb(self, interaction: discord.Interaction):
-                if interaction.user not in (ctx.author, member):
-                    await interaction.response.send_message("You are not part of this trade.", ephemeral=True)
-                    return
-                await interaction.response.edit_message(content="❌ Trade cancelled.", view=None)
+            async def on_set_coins(self, interaction: discord.Interaction):
+                await interaction.response.send_message("Please reply in this DM with the amount of coins you want to offer (integer). Send 0 to offer none. Timeout 60s.", ephemeral=True)
+                def check(m: discord.Message):
+                    return m.author.id == interaction.user.id and isinstance(m.channel, discord.DMChannel)
+                try:
+                    msg = await self.bot.wait_for("message", timeout=60.0, check=check)
+                    try:
+                        amount = int(msg.content.strip())
+                        if amount < 0:
+                            raise ValueError()
+                    except Exception:
+                        return await interaction.followup.send("❌ Invalid amount. Please enter a non-negative integer.", ephemeral=True)
+                    if self.is_initiator:
+                        session["initiator_coins"] = amount
+                    else:
+                        session["partner_coins"] = amount
+                    # update both panels
+                    embed = create_trade_embed()
+                    if session["initiator_msg"]:
+                        try:
+                            await session["initiator_msg"].edit(embed=embed, view=session["initiator_msg"].components and session["initiator_msg"].components[0])
+                        except Exception:
+                            pass
+                    if session["partner_msg"]:
+                        try:
+                            await session["partner_msg"].edit(embed=embed, view=session["partner_msg"].components and session["partner_msg"].components[0])
+                        except Exception:
+                            pass
+                    await interaction.followup.send(f"✅ Coins set to {amount}.", ephemeral=True)
+                except asyncio.TimeoutError:
+                    await interaction.followup.send("⏰ Timed out; no coins were set.", ephemeral=True)
+
+            async def on_cancel(self, interaction: discord.Interaction):
+                session["active"] = False
+                # notify both
+                try:
+                    if session["initiator_msg"]:
+                        await session["initiator_msg"].edit(content="❌ Trade cancelled.", embed=None, view=None)
+                    if session["partner_msg"]:
+                        await session["partner_msg"].edit(content="❌ Trade cancelled.", embed=None, view=None)
+                except Exception:
+                    pass
+                await interaction.response.send_message("❌ Trade cancelled.", ephemeral=True)
                 self.stop()
 
-            async def propose_cb(self, interaction: discord.Interaction):
-                # Only initiator can propose trade
-                if interaction.user != ctx.author:
-                    await interaction.response.send_message("Only the trade initiator can propose the trade.", ephemeral=True)
-                    return
+            async def on_propose(self, interaction: discord.Interaction):
+                # Only initiator will have this; sends confirmation to partner
+                if not self.is_initiator:
+                    return await interaction.response.send_message("Only the trade initiator can propose the trade.", ephemeral=True)
+                # Basic validation: ensure something offered (items or coins)
+                if not session["initiator_items"] and session["initiator_coins"] == 0:
+                    return await interaction.response.send_message("You must offer at least items or coins to propose.", ephemeral=True)
 
-                # Ensure both choices selected
-                if not self.your_choice or not self.their_choice:
-                    return await interaction.response.send_message("Please select both items before proposing.", ephemeral=True)
+                # Send confirmation to partner with accept/reject buttons
+                confirm_embed = discord.Embed(title="🔔 Trade Confirmation Request", color=BALANCE_COLOR)
+                confirm_embed.description = (
+                    f"{ctx.author.display_name} proposes a trade:\n\n"
+                    f"**They offer:**\n"
+                    f"{'None' if not session['initiator_items'] else '\n'.join(session['initiator_items'])}\nCoins: {session['initiator_coins']}\n\n"
+                    f"**They request from you:**\n"
+                    f"{'None' if not session['partner_items'] else '\n'.join(session['partner_items'])}\nCoins: {session['partner_coins']}\n\n"
+                    "Click Accept to accept the trade or Reject to decline. (60s)"
+                )
 
-                await interaction.response.edit_message(content="🔔 Proposing trade — sending DMs for confirmation...", view=None)
-
-                # Create DM confirm views for both users
-                initiator_confirmed = asyncio.Event()
-                partner_confirmed = asyncio.Event()
-                results = {"initiator": False, "partner": False}
-
-                class DMConfirmView(View):
-                    def __init__(self, allowed_user: discord.User, role: str):
-                        super().__init__(timeout=120)
-                        self.allowed_user = allowed_user
-                        self.role = role  # 'initiator' or 'partner'
-
+                class ConfirmView(View):
+                    def __init__(self):
+                        super().__init__(timeout=60)
+                        self.result = None
                         self.accept = Button(label="Accept", style=discord.ButtonStyle.green)
                         self.reject = Button(label="Reject", style=discord.ButtonStyle.red)
                         self.add_item(self.accept)
                         self.add_item(self.reject)
-
                         self.accept.callback = self.accept_cb
                         self.reject.callback = self.reject_cb
 
                     async def interaction_check(self, inter: discord.Interaction) -> bool:
-                        if inter.user != self.allowed_user:
-                            await inter.response.send_message("You are not allowed to confirm this trade.", ephemeral=True)
+                        if inter.user.id != member.id:
+                            await inter.response.send_message("You are not allowed to respond to this confirmation.", ephemeral=True)
                             return False
                         return True
 
                     async def accept_cb(self, inter: discord.Interaction):
-                        results[self.role] = True
-                        await inter.response.edit_message(content="✅ You accepted the trade.", view=None)
-                        if self.role == "initiator":
-                            initiator_confirmed.set()
-                        else:
-                            partner_confirmed.set()
+                        self.result = True
+                        await inter.response.edit_message(content="✅ You accepted the trade.", embed=None, view=None)
                         self.stop()
 
                     async def reject_cb(self, inter: discord.Interaction):
-                        results[self.role] = False
-                        await inter.response.edit_message(content="❌ You rejected the trade.", view=None)
-                        # set events to stop waiting
-                        if self.role == "initiator":
-                            initiator_confirmed.set()
-                        else:
-                            partner_confirmed.set()
+                        self.result = False
+                        await inter.response.edit_message(content="❌ You rejected the trade.", embed=None, view=None)
                         self.stop()
 
-                # Send DM to partner (must accept)
                 try:
-                    dm_msg_partner = await member.send(
-                        f"🔔 {ctx.author.display_name} wants to trade with you:\n" +
-                        f"**They offer:** {EMOJIS.get(self.your_choice,'')} {self.your_choice}\n" +
-                        f"**You offer:** {EMOJIS.get(self.their_choice,'')} {self.their_choice}\n\n" +
-                        "Click **Accept** to accept the trade or **Reject** to refuse. (120s timeout)",
-                        view=DMConfirmView(member, "partner")
-                    )
+                    confirm_msg = await member.send(embed=confirm_embed, view=ConfirmView())
                 except discord.Forbidden:
-                    await ctx.send(f"❌ I couldn't DM {member.display_name}. They might have DMs closed.")
-                    return
+                    return await interaction.response.send_message(f"❌ Could not DM {member.display_name} to request confirmation.", ephemeral=True)
 
-                # Send DM to initiator for confirmation as well
+                # wait for partner response
                 try:
-                    dm_msg_initiator = await ctx.author.send(
-                        f"🔔 Trade proposal sent to {member.display_name}.\n" +
-                        f"**You offer:** {EMOJIS.get(self.your_choice,'')} {self.your_choice}\n" +
-                        f"**They offer:** {EMOJIS.get(self.their_choice,'')} {self.their_choice}\n\n" +
-                        "Click **Accept** to finalize the trade (once the other user accepts). Click **Reject** to cancel. (120s timeout)",
-                        view=DMConfirmView(ctx.author, "initiator")
-                    )
-                except discord.Forbidden:
-                    await ctx.send("❌ I couldn't DM you. Please open your DMs and try again.")
-                    return
+                    # wait until the confirm view stops
+                    await confirm_msg.view.wait()
+                    res = confirm_msg.view.result
+                except Exception:
+                    res = None
 
-                # Wait for both to make a choice or timeout
-                try:
-                    await asyncio.wait_for(asyncio.gather(
-                        initiator_confirmed.wait(),
-                        partner_confirmed.wait()
-                    ), timeout=120)
-                except asyncio.TimeoutError:
-                    # At least one user didn't respond in time
-                    await ctx.send("⏰ Trade timed out — one or both users did not confirm in time.")
-                    return
+                if res is not True:
+                    # partner rejected or timed out
+                    # notify both panels
+                    try:
+                        if session["initiator_msg"]:
+                            await session["initiator_msg"].edit(content="❌ Trade declined or timed out.", embed=None, view=None)
+                        if session["partner_msg"]:
+                            await session["partner_msg"].edit(content="❌ Trade declined or timed out.", embed=None, view=None)
+                    except Exception:
+                        pass
+                    return await interaction.followup.send("❌ Trade was declined or timed out.", ephemeral=True)
 
-                # check results
-                if not results["partner"]:
-                    await ctx.send(f"❌ {member.display_name} declined the trade.")
-                    return
-                if not results["initiator"]:
-                    await ctx.send("❌ You cancelled the trade.")
-                    return
-
-                # Both accepted -> final inventory check and swap
-                # re-fetch inventories to be safe
+                # Partner accepted — finalize trade after re-checks
+                # Re-fetch inventories and balances
                 fresh_your_inv = await self.get_inventory(ctx.author.id) or {}
                 fresh_their_inv = await self.get_inventory(member.id) or {}
+                your_balance = await self.get_balance(ctx.author.id)
+                their_balance = await self.get_balance(member.id)
 
-                if fresh_your_inv.get(self.your_choice, 0) < 1 or fresh_their_inv.get(self.their_choice, 0) < 1:
-                    await ctx.send("❌ Trade failed: one of the items is no longer available.")
-                    # notify both in DM if possible
-                    try:
-                        await ctx.author.send("❌ Trade failed: one of the items is no longer available.")
-                    except discord.Forbidden:
-                        pass
-                    try:
-                        await member.send("❌ Trade failed: one of the items is no longer available.")
-                    except discord.Forbidden:
-                        pass
-                    return
+                # Validate items availability
+                for it in session["initiator_items"]:
+                    if fresh_your_inv.get(it, 0) < 1:
+                        try:
+                            await member.send("❌ Trade failed: initiator no longer has offered items.")
+                        except Exception:
+                            pass
+                        try:
+                            if session["initiator_msg"]:
+                                await session["initiator_msg"].edit(content="❌ Trade failed: items changed.", embed=None, view=None)
+                        except Exception:
+                            pass
+                        return await interaction.followup.send("❌ Trade failed: initiator no longer has offered items.", ephemeral=True)
+                for it in session["partner_items"]:
+                    if fresh_their_inv.get(it, 0) < 1:
+                        try:
+                            await ctx.author.send("❌ Trade failed: partner no longer has offered items.")
+                        except Exception:
+                            pass
+                        try:
+                            if session["partner_msg"]:
+                                await session["partner_msg"].edit(content="❌ Trade failed: items changed.", embed=None, view=None)
+                        except Exception:
+                            pass
+                        return await interaction.followup.send("❌ Trade failed: partner no longer has offered items.", ephemeral=True)
 
-                # perform the item swap
-                success = False
+                # Validate coins availability
+                if your_balance < session["initiator_coins"]:
+                    return await interaction.followup.send("❌ You no longer have enough coins to offer.", ephemeral=True)
+                if their_balance < session["partner_coins"]:
+                    return await interaction.followup.send(f"❌ {member.display_name} no longer has enough coins to offer.", ephemeral=True)
+
+                # Execute atomic-like swap (best effort)
                 try:
-                    # remove/add with your helper functions
-                    await self.remove_item(ctx.author.id, self.your_choice, 1)
-                    await self.add_item(ctx.author.id, self.their_choice, 1)
-                    await self.remove_item(member.id, self.their_choice, 1)
-                    await self.add_item(member.id, self.your_choice, 1)
-                    success = True
+                    # transfer items
+                    for it in session["initiator_items"]:
+                        await self.remove_item(ctx.author.id, it, 1)
+                        await self.add_item(member.id, it, 1)
+                    for it in session["partner_items"]:
+                        await self.remove_item(member.id, it, 1)
+                        await self.add_item(ctx.author.id, it, 1)
+                    # transfer coins
+                    if session["initiator_coins"] > 0:
+                        await self.update_balance(ctx.author.id, -session["initiator_coins"])
+                        await self.update_balance(member.id, session["initiator_coins"])
+                    if session["partner_coins"] > 0:
+                        await self.update_balance(member.id, -session["partner_coins"])
+                        await self.update_balance(ctx.author.id, session["partner_coins"])
                 except Exception as e:
-                    # If any DB error: try to log and inform
-                    self.bot.logger.exception("Error performing trade: %s", e) if hasattr(self, "bot") and getattr(self.bot, "logger", None) else None
-                    success = False
-
-                if success:
-                    await ctx.send("✅ Trade completed successfully!")
-                    # inform both users in DM
+                    # best-effort: inform users
                     try:
-                        await ctx.author.send(f"✅ Trade with {member.display_name} completed: you received {EMOJIS.get(self.their_choice,'')} {self.their_choice}.")
-                    except discord.Forbidden:
+                        if session["initiator_msg"]:
+                            await session["initiator_msg"].edit(content="❌ Trade failed due to an internal error.", embed=None, view=None)
+                        if session["partner_msg"]:
+                            await session["partner_msg"].edit(content="❌ Trade failed due to an internal error.", embed=None, view=None)
+                    except Exception:
                         pass
-                    try:
-                        await member.send(f"✅ Trade with {ctx.author.display_name} completed: you received {EMOJIS.get(self.your_choice,'')} {self.your_choice}.")
-                    except discord.Forbidden:
-                        pass
-                else:
-                    await ctx.send("❌ Trade failed due to an internal error. Please try again later.")
+                    return await interaction.followup.send("❌ Trade failed due to an internal error. Please try again later.", ephemeral=True)
 
-        channel_view = ChannelTradeView()
-        await ctx.send(f"Trading items with {member.display_name}. Select items below and press **Propose Trade** when ready:", view=channel_view)
+                # Success
+                try:
+                    if session["initiator_msg"]:
+                        await session["initiator_msg"].edit(content="✅ Trade completed successfully!", embed=None, view=None)
+                    if session["partner_msg"]:
+                        await session["partner_msg"].edit(content="✅ Trade completed successfully!", embed=None, view=None)
+                except Exception:
+                    pass
+
+                await interaction.followup.send("✅ Trade completed successfully.", ephemeral=True)
+                try:
+                    await ctx.author.send(f"✅ Trade with {member.display_name} completed.")
+                except Exception:
+                    pass
+                try:
+                    await member.send(f"✅ Trade with {ctx.author.display_name} completed.")
+                except Exception:
+                    pass
+                session["active"] = False
+                self.stop()
+
+        # send DMs with views and store messages for cross-editing
+        initiator_view = UserTradeView(ctx.author.id, author_options, is_initiator=True)
+        partner_view = UserTradeView(member.id, partner_options, is_initiator=False)
+
+        try:
+            init_msg = await ctx.author.send(embed=create_trade_embed(), view=initiator_view)
+            part_msg = await member.send(embed=create_trade_embed(), view=partner_view)
+            session["initiator_msg"] = init_msg
+            session["partner_msg"] = part_msg
+            logger.info(f"trade panels sent initiator={ctx.author.id} partner={member.id}")
+        except Exception:
+            logger.exception("failed to send trade panels")
+            return await ctx.send("❌ Failed to open trade panels.")
+
+        # Wait until either view times out or session becomes inactive
+        try:
+            await asyncio.wait_for(asyncio.gather(initiator_view.wait(), partner_view.wait()), timeout=600)
+        except asyncio.TimeoutError:
+            if session["active"]:
+                # timeout - cancel trade panels
+                try:
+                    await init_msg.edit(content="⏰ Trade timed out.", embed=None, view=None)
+                    await part_msg.edit(content="⏰ Trade timed out.", embed=None, view=None)
+                except Exception:
+                    pass
+
+        # done
+        return
 
 
     # leader board
     @economy_group.command(name="leaderboard", aliases=["lb"])
     async def leaderboard(self, ctx):
+        logger.info(f"Command: leaderboard by user={ctx.author.id}")
         leaderboard = await self.fetch_leaderboard()
         if not leaderboard:
             return await ctx.send("❌ No data for leaderboard.")
@@ -833,6 +1032,7 @@ class Economy(commands.Cog):
     @economy_group.group(name="admin", invoke_without_command=True)
     @commands.is_owner()
     async def admin_group(self, ctx):
+        logger.info(f"Command: admin help by owner={ctx.author.id}")
         embed = discord.Embed(
             title="Economy Admin Commands",
             description=f"Manage the economy system."
@@ -860,12 +1060,14 @@ class Economy(commands.Cog):
     @commands.is_owner()
     async def give(self, ctx, member: discord.Member, amount: int):
         await self.update_balance(member.id, amount)
+        logger.info(f"admin give by owner={ctx.author.id} to={member.id} amount={amount}")
         await ctx.send(f"✅ Gave {amount} coins to {member.mention}")
 
     @admin_group.command(name="take")
     @commands.is_owner()
     async def take(self, ctx, member: discord.Member, amount: int):
         await self.update_balance(member.id, -amount)
+        logger.info(f"admin take by owner={ctx.author.id} from={member.id} amount={amount}")
         await ctx.send(f"✅ Took {amount} coins from {member.mention}")
 
     @admin_group.command(name="reset")
@@ -875,6 +1077,7 @@ class Economy(commands.Cog):
             await db.execute("DELETE FROM economy WHERE user_id = ?", (member.id,))
             await db.execute("DELETE FROM inventory WHERE user_id = ?", (member.id,))
             await db.commit()
+        logger.info(f"admin reset by owner={ctx.author.id} user={member.id}")
         await ctx.send(f"✅ Reset {member.mention}'s profile.")
     
     @admin_group.group(name="shop", invoke_without_command=False)

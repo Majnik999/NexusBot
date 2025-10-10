@@ -56,6 +56,24 @@ if not logger.handlers:
     ))
     logger.addHandler(file_handler)
 
+    # Add filter to suppress "command not found" spam without remaking logger
+    class CommandNotFoundFilter(logging.Filter):
+        def filter(self, record):
+            try:
+                msg = record.getMessage()
+            except Exception:
+                msg = str(record.msg)
+            if not msg:
+                return True
+            low = msg.lower()
+            # adjust substrings as needed if your bot/network prints different wording
+            if "commandnotfound" in low.replace(" ", "") or "command not found" in low:
+                return False
+            return True
+
+    for h in logger.handlers:
+        h.addFilter(CommandNotFoundFilter())
+
 # Bot setup
 bot = commands.Bot(command_prefix=PREFIX, intents=discord.Intents.all(), help_command=None)
 

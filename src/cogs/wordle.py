@@ -7,6 +7,8 @@ import json
 import os
 from settings import WORDLE_WORDS, PREFIX
 from src.config.versions import WORDLE_VERSION
+from datetime import datetime
+from main import logger  # added: use the main logger for single game-summary logs
 
 # Example 100 words
 WORDS = WORDLE_WORDS
@@ -56,6 +58,27 @@ class Wordle(commands.Cog):
                 return {int(k): v for k, v in data.items()}
         return {}
 
+    # helper to log a single summary for a finished game
+    def log_game_summary(self, user_id, user_name, result, word, guesses, channel_id=None, guild_id=None):
+        summary = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "user_id": user_id,
+            "user_name": user_name,
+            "result": result,  # "won", "lost", or "stopped"
+            "word": word,
+            "attempts": len(guesses),
+            "guesses": guesses,
+            "word_length": len(word) if word else None,
+            "channel_id": channel_id,
+            "guild_id": guild_id,
+            "version": WORDLE_VERSION
+        }
+        try:
+            logger.info("WordleGameSummary: " + json.dumps(summary, ensure_ascii=False))
+        except Exception:
+            # ensure logging never breaks the bot flow
+            logger.info(f"WordleGameSummary: user={user_id} result={result} word={word} attempts={len(guesses)}")
+
     @commands.group(name="wordle", invoke_without_command=True)
     async def wordle_group(self, ctx):
         embed = discord.Embed(
@@ -102,7 +125,11 @@ class Wordle(commands.Cog):
     async def stop_wordle(self, ctx):
         if ctx.author.id not in self.active_games:
             return await ctx.send("You have no active game.")
-        word = self.active_games[ctx.author.id]["word"]
+        game = self.active_games[ctx.author.id]
+        word = game.get("word")
+        guesses = game.get("guesses", [])
+        # log the stop once with full game info
+        self.log_game_summary(ctx.author.id, str(ctx.author), "stopped", word, guesses, channel_id=ctx.channel.id, guild_id=getattr(ctx.guild, "id", None))
         del self.active_games[ctx.author.id]
         self.save_games()
         await ctx.send(f"Wordle game stopped. The word was `{word}`.")
@@ -144,6 +171,8 @@ class Wordle(commands.Cog):
             img_file = self.generate_image(user_id)
             embed.set_image(url="attachment://wordle.png")
             await message.channel.send(embed=embed, file=img_file)
+            # Log the finished (won) game once with full details
+            self.log_game_summary(user_id, str(message.author), "won", word, game.get("guesses", []), channel_id=message.channel.id, guild_id=getattr(message.guild, "id", None))
             del self.active_games[user_id]
             self.save_games()
             return
@@ -159,6 +188,8 @@ class Wordle(commands.Cog):
             img_file = self.generate_image(user_id)
             embed.set_image(url="attachment://wordle.png")
             await message.channel.send(embed=embed, file=img_file)
+            # Log the finished (lost) game once with full details
+            self.log_game_summary(user_id, str(message.author), "lost", word, game.get("guesses", []), channel_id=message.channel.id, guild_id=getattr(message.guild, "id", None))
             del self.active_games[user_id]
             self.save_games()
             return

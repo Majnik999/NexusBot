@@ -1,4 +1,5 @@
 from discord import Color
+from json import dumps
 
 # Set bot prefix
 PREFIX = "PREFIX"
@@ -65,3 +66,10 @@ HELP_COLOR = Color.blurple()
 
 LAVALINK_URI: str = 'https://lavalink.idk.com'  # Example format without http:// or https://
 LAVALINK_PASSWORD: str = 'Password'
+
+# Default JSON example for activity loop (copy-paste ready)
+DEFAULT_ACTIVITY = dumps([
+    {"type": "playing", "name": "Hello world", "duration": 30},
+    {"type": "watching", "name": "the sky", "duration": 45},
+    {"type": "listening", "name": "music", "duration": 20}
+], indent=2)

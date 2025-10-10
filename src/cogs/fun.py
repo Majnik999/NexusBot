@@ -25,7 +25,6 @@ class Fun(commands.Cog):
         embed.add_field(name="dance", value="Make the bot dance with emojis 🕺💃", inline=False)
         embed.add_field(name="random [command]", value="Run any random sudo command you imagine", inline=False)
         embed.add_field(name="delete_google", value="Fake-delete Google in a dramatic way 💥 (ends with Wow!)", inline=False)
-        embed.add_field(name="kick", value="Fake for members real for moderators!")
         embed.set_footer(text="Try 'sudo [command]' and have fun! 🤖")
         await ctx.send(embed=embed)
 
