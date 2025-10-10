@@ -1,9 +1,8 @@
 import discord
 from discord.ext import commands
 from settings import QUIT_COMMAND, PREFIX, DEFAULT_ACTIVITY
-from src.config.versions import BOT_VERSION
+from src.config.versions import BOT_VERSION as _BOT_VERSION
 
-import time
 import json
 import asyncio
 
@@ -69,9 +68,9 @@ class OwnerCommands(commands.Cog):
         await self.bot.close()
     
     @quiting.error
-    async def handle_error_quitting(self, ctx, error):
+    @quiting.error
+    async def handle_error_quitting(self, ctx, _error):
         await ctx.send("❌ You are not owner or some error happened!")
-    
     @botgroup.command(name="ping", hidden=True)
     @commands.is_owner()
     async def botping(self, ctx):
@@ -80,9 +79,9 @@ class OwnerCommands(commands.Cog):
         await ctx.send(f"Pong! Bot latency: `{latency}ms`!")
     
     @botping.error
-    async def handle_error_quitting(self, ctx, error):
+    @botping.error
+    async def handle_error_botping(self, ctx, _error):
         await ctx.send("❌ You are not owner or some error happened!")
-    
     # Activity management (owner only)
     @commands.group(name="activity", invoke_without_command=True, hidden=True)
     @commands.is_owner()
@@ -184,6 +183,7 @@ class OwnerCommands(commands.Cog):
             return
 
         # cancel existing task if running
+        # cancel existing task if running
         if self.activity_loop_task and not self.activity_loop_task.done():
             self.activity_loop_task.cancel()
             try:
@@ -191,9 +191,8 @@ class OwnerCommands(commands.Cog):
             except:
                 pass
 
-        self.activity_loop_task = asyncio.create_task(self._run_activity_loop(data, ctx))
+        self.activity_loop_task = asyncio.create_task(self._run_activity_loop(data))
         await ctx.send("✅ Activity loop started.")
-
     @activity.command(name="stop", hidden=True)
     @commands.is_owner()
     async def activity_stop(self, ctx):
@@ -208,55 +207,53 @@ class OwnerCommands(commands.Cog):
         else:
             await ctx.send("ℹ️ No active activity loop.")
 
-    # internal loop runner
-    async def _run_activity_loop(self, activities, ctx):
-        atype_map = {
-            "playing": discord.ActivityType.playing,
-            "listening": discord.ActivityType.listening,
-            "watching": discord.ActivityType.watching,
-            "competing": discord.ActivityType.competing
-        }
-        try:
-            while True:
-                for item in activities:
-                    typ = item.get("type", "playing").lower()
-                    name = item.get("name", "")
-                    duration = float(item.get("duration", 30))
-                    atype = atype_map.get(typ, discord.ActivityType.playing)
-                    activity = discord.Activity(type=atype, name=name) if name else None
-                    await self.bot.change_presence(activity=activity)
-                    await asyncio.sleep(max(1.0, duration))
-        except asyncio.CancelledError:
-            # optionally reset to default on cancellation
-            da = DEFAULT_ACTIVITY if isinstance(DEFAULT_ACTIVITY, dict) else {}
-            status_str = da.get("status", "online")
-            name = da.get("name", "")
-            type_str = da.get("type", "playing")
-            status_map = {
-                "online": discord.Status.online,
-                "idle": discord.Status.idle,
-                "dnd": discord.Status.do_not_disturb,
-                "invisible": discord.Status.invisible
-            }
-            status = status_map.get(status_str.lower(), discord.Status.online)
+        async def _run_activity_loop(self, activities):
             atype_map = {
                 "playing": discord.ActivityType.playing,
                 "listening": discord.ActivityType.listening,
                 "watching": discord.ActivityType.watching,
                 "competing": discord.ActivityType.competing
             }
-            atype = atype_map.get(type_str.lower(), discord.ActivityType.playing)
-            activity = discord.Activity(type=atype, name=name) if name else None
-            await self.bot.change_presence(status=status, activity=activity)
-            return
-
+            try:
+                while True:
+                    for item in activities:
+                        typ = item.get("type", "playing").lower()
+                        name = item.get("name", "")
+                        duration = float(item.get("duration", 30))
+                        atype = atype_map.get(typ, discord.ActivityType.playing)
+                        activity = discord.Activity(type=atype, name=name) if name else None
+                        await self.bot.change_presence(activity=activity)
+                        await asyncio.sleep(max(1.0, duration))
+            except asyncio.CancelledError:
+                # optionally reset to default on cancellation
+                da = DEFAULT_ACTIVITY if isinstance(DEFAULT_ACTIVITY, dict) else {}
+                status_str = da.get("status", "online")
+                name = da.get("name", "")
+                type_str = da.get("type", "playing")
+                status_map = {
+                    "online": discord.Status.online,
+                    "idle": discord.Status.idle,
+                    "dnd": discord.Status.do_not_disturb,
+                    "invisible": discord.Status.invisible
+                }
+                status = status_map.get(status_str.lower(), discord.Status.online)
+                atype_map = {
+                    "playing": discord.ActivityType.playing,
+                    "listening": discord.ActivityType.listening,
+                    "watching": discord.ActivityType.watching,
+                    "competing": discord.ActivityType.competing
+                }
+                atype = atype_map.get(type_str.lower(), discord.ActivityType.playing)
+                activity = discord.Activity(type=atype, name=name) if name else None
+                await self.bot.change_presence(status=status, activity=activity)
+                return
+    @activity_set.error
     @activity_set.error
     @activity_reset.error
     @activity_loop.error
     @activity_stop.error
-    async def activity_error(self, ctx, error):
+    async def activity_error(self, ctx, _error):
         await ctx.send("❌ You are not owner or some error happened!")
-
     # add servers listing (owner-only)
     @botgroup.command(name="servers", hidden=True)
     @commands.is_owner()
@@ -325,17 +322,18 @@ class OwnerCommands(commands.Cog):
                 return True
 
             @discord.ui.button(label="◀️", style=discord.ButtonStyle.secondary)
-            async def previous(self, button: discord.ui.Button, interaction: discord.Interaction):
+            @discord.ui.button(label="◀️", style=discord.ButtonStyle.secondary)
+            async def previous(self, _button: discord.ui.Button, interaction: discord.Interaction):
                 self.current = (self.current - 1) % len(self.pages)
                 await interaction.response.edit_message(embed=self.make_embed(self.current), view=self)
-
             @discord.ui.button(label="▶️", style=discord.ButtonStyle.secondary)
-            async def next(self, button: discord.ui.Button, interaction: discord.Interaction):
+            @discord.ui.button(label="▶️", style=discord.ButtonStyle.secondary)
+            async def next(self, _button: discord.ui.Button, interaction: discord.Interaction):
                 self.current = (self.current + 1) % len(self.pages)
                 await interaction.response.edit_message(embed=self.make_embed(self.current), view=self)
-
             @discord.ui.button(label="⏹️", style=discord.ButtonStyle.danger)
-            async def stop(self, button: discord.ui.Button, interaction: discord.Interaction):
+            @discord.ui.button(label="⏹️", style=discord.ButtonStyle.danger)
+            async def stop(self, _button: discord.ui.Button, interaction: discord.Interaction):
                 for child in self.children:
                     child.disabled = True
                 try:
@@ -343,12 +341,11 @@ class OwnerCommands(commands.Cog):
                 except Exception:
                     pass
                 self.stop()
-
             @discord.ui.button(label="Why are you sometimes dum", style=discord.ButtonStyle.primary)
-            async def why(self, button: discord.ui.Button, interaction: discord.Interaction):
+            @discord.ui.button(label="Why are you sometimes dum", style=discord.ButtonStyle.primary)
+            async def why(self, _button: discord.ui.Button, interaction: discord.Interaction):
                 # playful owner-only explanation; ephemeral so only owner sees it
                 await interaction.response.send_message("I'm a bot — sometimes I do weird things due to rate limits, missing intents/permissions, or edge cases in code. If something's broken, please report with logs.", ephemeral=True)
-
             async def on_timeout(self):
                 # disable buttons on timeout and update message embed footer
                 for child in self.children:
