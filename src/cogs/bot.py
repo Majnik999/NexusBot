@@ -86,18 +86,11 @@ class OwnerCommands(commands.Cog):
     @commands.group(name="activity", invoke_without_command=True, hidden=True)
     @commands.is_owner()
     async def activity(self, ctx):
-        # show activity help embed (second embed from help_one)
         await ctx.send(embed=help_one()[1])
 
     @activity.command(name="set", hidden=True)
     @commands.is_owner()
     async def activity_set(self, ctx, _type: str, *, content: str):
-        """
-        Usage examples:
-            activity set status idle
-            activity set activity playing Hello world
-            activity set activity listening Music
-        """
         typ = _type.lower()
         if typ == "status":
             states = {
@@ -116,16 +109,20 @@ class OwnerCommands(commands.Cog):
 
         if typ == "activity":
             parts = content.split()
-            atype_str = parts[0].lower() if parts and parts[0].lower() in ("playing","listening","watching","competing") else "playing"
-            name = " ".join(parts[1:]) if atype_str != "playing" and len(parts) > 1 else content
+            atype_str = parts[0].lower()
+            if atype_str not in ("playing", "listening", "watching", "competing"):
+                atype_str = "playing"
+                name = content
+            else:
+                name = " ".join(parts[1:])
+            
             atype_map = {
                 "playing": discord.ActivityType.playing,
                 "listening": discord.ActivityType.listening,
                 "watching": discord.ActivityType.watching,
                 "competing": discord.ActivityType.competing
             }
-            atype = atype_map.get(atype_str, discord.ActivityType.playing)
-            activity = discord.Activity(type=atype, name=name)
+            activity = discord.Activity(type=atype_map[atype_str], name=name)
             await self.bot.change_presence(activity=activity)
             await ctx.send(f"✅ Activity set: `{atype_str}` {name}")
             return
@@ -135,198 +132,111 @@ class OwnerCommands(commands.Cog):
     @activity.command(name="reset", hidden=True)
     @commands.is_owner()
     async def activity_reset(self, ctx):
-        # DEFAULT_ACTIVITY expected to be a dict like:
-        # {"type": "playing", "name": "Hello", "status": "online"}
-        da = DEFAULT_ACTIVITY if isinstance(DEFAULT_ACTIVITY, dict) else {}
-        status_str = da.get("status", "online")
-        name = da.get("name", "")
-        type_str = da.get("type", "playing")
-        status_map = {
-            "online": discord.Status.online,
-            "idle": discord.Status.idle,
-            "dnd": discord.Status.do_not_disturb,
-            "invisible": discord.Status.invisible
-        }
-        status = status_map.get(status_str.lower(), discord.Status.online)
-        atype_map = {
-            "playing": discord.ActivityType.playing,
-            "listening": discord.ActivityType.listening,
-            "watching": discord.ActivityType.watching,
-            "competing": discord.ActivityType.competing
-        }
-        atype = atype_map.get(type_str.lower(), discord.ActivityType.playing)
-        activity = discord.Activity(type=atype, name=name) if name else None
-        await self.bot.change_presence(status=status, activity=activity)
-        await ctx.send("✅ Activity reset to default from settings.")
-
-    @activity.command(name="loop", hidden=True)
-    @commands.is_owner()
-    async def activity_loop(self, ctx, *, json_input: str):
-        """
-        Starts looping activities. json_input should be a JSON array of items:
-        [{"type":"playing","name":"Hello","duration":30}, ...]
-        Supported types: playing, listening, watching, competing
-        Duration in seconds required for each item.
-        """
         try:
-            data = json.loads(json_input)
-            if not isinstance(data, list) or not data:
-                await ctx.send("❌ JSON must be a non-empty list of activity objects.")
-                return
-            # validate entries
-            for item in data:
-                if not isinstance(item, dict) or "name" not in item or "duration" not in item:
-                    await ctx.send("❌ Each item must be an object with at least 'name' and 'duration' fields.")
-                    return
-        except Exception as e:
-            await ctx.send(f"❌ Failed to parse JSON: {e}")
-            return
-
-        # cancel existing task if running
-        # cancel existing task if running
-        if self.activity_loop_task and not self.activity_loop_task.done():
-            self.activity_loop_task.cancel()
-            try:
-                await self.activity_loop_task
-            except:
-                pass
-
-        self.activity_loop_task = asyncio.create_task(self._run_activity_loop(data))
-        await ctx.send("✅ Activity loop started.")
-    @activity.command(name="stop", hidden=True)
-    @commands.is_owner()
-    async def activity_stop(self, ctx):
-        if self.activity_loop_task and not self.activity_loop_task.done():
-            self.activity_loop_task.cancel()
-            try:
-                await self.activity_loop_task
-            except:
-                pass
-            self.activity_loop_task = None
-            await ctx.send("✅ Activity loop stopped.")
-        else:
-            await ctx.send("ℹ️ No active activity loop.")
-
-        async def _run_activity_loop(self, activities):
+            # Try to parse DEFAULT_ACTIVITY as JSON if it's a string
+            da = json.loads(DEFAULT_ACTIVITY) if isinstance(DEFAULT_ACTIVITY, str) else DEFAULT_ACTIVITY
+            
+            status_str = da.get("status", "online")
+            name = da.get("name", "")
+            type_str = da.get("type", "playing")
+            
+            status_map = {
+                "online": discord.Status.online,
+                "idle": discord.Status.idle,
+                "dnd": discord.Status.do_not_disturb,
+                "invisible": discord.Status.invisible
+            }
             atype_map = {
                 "playing": discord.ActivityType.playing,
                 "listening": discord.ActivityType.listening,
                 "watching": discord.ActivityType.watching,
                 "competing": discord.ActivityType.competing
             }
-            try:
-                while True:
-                    for item in activities:
-                        typ = item.get("type", "playing").lower()
-                        name = item.get("name", "")
-                        duration = float(item.get("duration", 30))
-                        atype = atype_map.get(typ, discord.ActivityType.playing)
-                        activity = discord.Activity(type=atype, name=name) if name else None
-                        await self.bot.change_presence(activity=activity)
-                        await asyncio.sleep(max(1.0, duration))
-            except asyncio.CancelledError:
-                # optionally reset to default on cancellation
-                da = DEFAULT_ACTIVITY if isinstance(DEFAULT_ACTIVITY, dict) else {}
-                status_str = da.get("status", "online")
-                name = da.get("name", "")
-                type_str = da.get("type", "playing")
-                status_map = {
-                    "online": discord.Status.online,
-                    "idle": discord.Status.idle,
-                    "dnd": discord.Status.do_not_disturb,
-                    "invisible": discord.Status.invisible
-                }
-                status = status_map.get(status_str.lower(), discord.Status.online)
-                atype_map = {
-                    "playing": discord.ActivityType.playing,
-                    "listening": discord.ActivityType.listening,
-                    "watching": discord.ActivityType.watching,
-                    "competing": discord.ActivityType.competing
-                }
-                atype = atype_map.get(type_str.lower(), discord.ActivityType.playing)
-                activity = discord.Activity(type=atype, name=name) if name else None
-                await self.bot.change_presence(status=status, activity=activity)
+            
+            status = status_map.get(status_str.lower(), discord.Status.online)
+            atype = atype_map.get(type_str.lower(), discord.ActivityType.playing)
+            activity = discord.Activity(type=atype, name=name) if name else None
+            
+            await self.bot.change_presence(status=status, activity=activity)
+            await ctx.send("✅ Activity reset to default from settings.")
+        except json.JSONDecodeError:
+            await ctx.send("❌ Failed to parse default activity settings.")
+        except Exception as e:
+            await ctx.send(f"❌ Error resetting activity: {str(e)}")
+
+    @activity.command(name="loop", hidden=True)
+    @commands.is_owner()
+    async def activity_loop(self, ctx, *, json_input: str = None):
+        try:
+            # If no JSON provided, show the default example
+            if not json_input:
+                await ctx.send(f"Example JSON format:\n```json\n{DEFAULT_ACTIVITY_LOOP_JSON}\n```")
                 return
-    @activity_set.error
+            
+            data = json.loads(json_input)
+            if not isinstance(data, list) or not data:
+                await ctx.send("❌ JSON must be a non-empty list of activity objects.")
+                return
+
+            for item in data:
+                if not isinstance(item, dict) or "name" not in item or "duration" not in item:
+                    await ctx.send("❌ Each item must have 'name' and 'duration' fields.")
+                    return
+
+            if self.activity_loop_task and not self.activity_loop_task.done():
+                self.activity_loop_task.cancel()
+            
+            self.activity_loop_task = self.bot.loop.create_task(self._run_activity_loop(data))
+            await ctx.send("✅ Activity loop started.")
+            
+        except json.JSONDecodeError:
+            await ctx.send("❌ Invalid JSON format.")
+        except Exception as e:
+            await ctx.send(f"❌ Error: {str(e)}")
+
+    @activity.command(name="stop", hidden=True)
+    @commands.is_owner()
+    async def activity_stop(self, ctx):
+        if self.activity_loop_task and not self.activity_loop_task.done():
+            self.activity_loop_task.cancel()
+            self.activity_loop_task = None
+            await ctx.send("✅ Activity loop stopped.")
+        else:
+            await ctx.send("ℹ️ No active activity loop.")
+
+    async def _run_activity_loop(self, activities):
+        atype_map = {
+            "playing": discord.ActivityType.playing,
+            "listening": discord.ActivityType.listening,
+            "watching": discord.ActivityType.watching,
+            "competing": discord.ActivityType.competing
+        }
+        
+        try:
+            while True:
+                for item in activities:
+                    typ = item.get("type", "playing").lower()
+                    name = item.get("name", "")
+                    duration = float(item.get("duration", 30))
+                    
+                    activity = discord.Activity(type=atype_map.get(typ, discord.ActivityType.playing), name=name)
+                    await self.bot.change_presence(activity=activity)
+                    await asyncio.sleep(duration)
+                    
+        except asyncio.CancelledError:
+            # Reset to default activity
+            await self.activity_reset(None)
+
+    @activity.error
     @activity_set.error
     @activity_reset.error
     @activity_loop.error
     @activity_stop.error
-    async def activity_error(self, ctx, _error):
-        await ctx.send("❌ You are not owner or some error happened!")
-    # add servers listing (owner-only)
-    @botgroup.command(name="servers", hidden=True)
-    @commands.is_owner()
-    async def servers(self, ctx):
-        """Shows all servers the bot is in with pagination and invite links"""
-        # Sort guilds by member count
-        guilds = sorted(self.bot.guilds, key=lambda g: g.member_count, reverse=True)
-        if not guilds:
-            await ctx.send("Bot is not in any servers.")
-            return
-
-        # Create entries list
-        entries = []
-        for guild in guilds:
-            invite_url = "No invite available"
-
-            entry = {
-                "name": guild.name,
-                "id": guild.id, 
-                "members": guild.member_count,
-                "owner_id": guild.owner_id,
-                "invite": invite_url
-            }
-            entries.append(entry)
-
-        # Pagination setup
-        per_page = 10
-        pages = [entries[i:i+per_page] for i in range(0, len(entries), per_page)]
-
-        # Create embed
-        def create_embed(page_num):
-            embed = discord.Embed(
-                title=f"Servers ({len(entries)} total)",
-                description=f"Page {page_num+1}/{len(pages)}",
-                color=discord.Color.blue()
-            )
-            
-            for i, guild in enumerate(pages[page_num], start=1 + page_num*per_page):
-                embed.add_field(
-                    name=f"{i}. {guild['name']}", 
-                    value=f"ID: `{guild['id']}`\nMembers: `{guild['members']}`\nOwner ID: `{guild['owner_id']}`\nInvite: {guild['invite']}",
-                    inline=False
-                )
-            return embed
-
-        # Create view with buttons
-        class Buttons(discord.ui.View):
-            def __init__(self):
-                super().__init__(timeout=60)
-                self.page = 0
-
-            @discord.ui.button(label="◀", style=discord.ButtonStyle.primary)
-            async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
-                if interaction.user != ctx.author:
-                    return
-                self.page = (self.page - 1) % len(pages)
-                await interaction.response.edit_message(embed=create_embed(self.page))
-
-            @discord.ui.button(label="▶", style=discord.ButtonStyle.primary) 
-            async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
-                if interaction.user != ctx.author:
-                    return
-                self.page = (self.page + 1) % len(pages)
-                await interaction.response.edit_message(embed=create_embed(self.page))
-
-            @discord.ui.button(label="❌", style=discord.ButtonStyle.danger)
-            async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
-                if interaction.user != ctx.author:
-                    return
-                await interaction.message.delete()
-
-        view = Buttons()
-        await ctx.send(embed=create_embed(0), view=view)
+    async def activity_error(self, ctx, error):
+        if isinstance(error, commands.NotOwner):
+            await ctx.send("❌ This command is only for the bot owner.")
+        else:
+            await ctx.send(f"❌ An error occurred: {str(error)}")
 
 async def setup(bot):
     await bot.add_cog(OwnerCommands(bot))
