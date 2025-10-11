@@ -45,6 +45,20 @@ class VolumeSelect(discord.ui.Select):
             # Use the interaction to immediately update the view
             await self.cog.update_panel_message(vc, interaction=interaction)
             
+        except wavelink.LavalinkException:
+            # Stop the player and notify the user if Lavalink connection is lost
+            try:
+                await vc.stop()
+                await vc.disconnect()
+                if vc.panel_message:
+                    try: await vc.panel_message.delete()
+                    except: pass
+                    vc.panel_message = None
+                await interaction.response.send_message("Lost connection to music server. Stopping playback.", ephemeral=True)
+            except Exception:
+                await interaction.response.send_message("An error occurred with the music player.", ephemeral=True)
+            return
+            
         except ValueError:
             await interaction.response.send_message("Invalid volume selection.", ephemeral=True)
             
