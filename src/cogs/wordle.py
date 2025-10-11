@@ -154,7 +154,6 @@ class Wordle(commands.Cog):
             embed.set_image(url="attachment://wordle.png")
             await message.channel.send(embed=embed, file=img_file)
             # Log the finished (won) game once with full details
-            self.log_game_summary(user_id, str(message.author), "won", word, game.get("guesses", []), channel_id=message.channel.id, guild_id=getattr(message.guild, "id", None))
             del self.active_games[user_id]
             self.save_games()
             return
@@ -171,7 +170,6 @@ class Wordle(commands.Cog):
             embed.set_image(url="attachment://wordle.png")
             await message.channel.send(embed=embed, file=img_file)
             # Log the finished (lost) game once with full details
-            self.log_game_summary(user_id, str(message.author), "lost", word, game.get("guesses", []), channel_id=message.channel.id, guild_id=getattr(message.guild, "id", None))
             del self.active_games[user_id]
             self.save_games()
             return
