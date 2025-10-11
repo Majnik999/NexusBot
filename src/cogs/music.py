@@ -292,8 +292,10 @@ class Music(commands.Cog):
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
         player: CustomPlayer = payload.player
+        if not player:
+            return
+            
         current_track = payload.track
-
         guild_name = player.guild.name if player.guild else "Unknown Guild"
         guild_id = player.guild.id if player.guild else "N/A"
         
