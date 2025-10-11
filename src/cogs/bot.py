@@ -163,16 +163,25 @@ class OwnerCommands(commands.Cog):
 
             if not DEFAULT_ACTIVITY:
                 await self.bot.change_presence(activity=None, status=discord.Status.online)
-                await ctx.send("✅ Activity reset to none.")
+                if ctx:
+                    await ctx.send("✅ Activity reset to none.")
                 return
 
-            # Handle string or dict DEFAULT_ACTIVITY
+            # Handle string or dict/list DEFAULT_ACTIVITY
             da = json.loads(DEFAULT_ACTIVITY) if isinstance(DEFAULT_ACTIVITY, str) else DEFAULT_ACTIVITY
 
             # Check if default activity includes a loop configuration
-            if "loop" in da:
+            if isinstance(da, dict) and "loop" in da:
                 self.activity_loop_task = self.bot.loop.create_task(self._run_activity_loop(da["loop"]))
-                await ctx.send("✅ Default activity loop started.")
+                if ctx:
+                    await ctx.send("✅ Default activity loop started.")
+                return
+
+            # Handle list configuration (treat as loop)
+            if isinstance(da, list):
+                self.activity_loop_task = self.bot.loop.create_task(self._run_activity_loop(da))
+                if ctx:
+                    await ctx.send("✅ Default activity loop started.")
                 return
 
             # Handle single activity setting
@@ -198,10 +207,21 @@ class OwnerCommands(commands.Cog):
             activity = discord.Activity(type=atype, name=name) if name else None
 
             await self.bot.change_presence(status=status, activity=activity)
-            await ctx.send("✅ Activity reset to default from settings.")
+            if ctx:
+                await ctx.send("✅ Activity reset to default from settings.")
 
         except Exception as e:
-            await ctx.send(f"❌ Error resetting activity: {str(e)}")
+            if ctx:
+                await ctx.send(f"❌ Error resetting activity: {str(e)}")
+            else:
+                print(f"Error resetting activity: {str(e)}")
+
+    async def _reset_presence(self):
+        """Reset presence without requiring context."""
+        try:
+            await self.bot.change_presence(activity=None, status=discord.Status.online)
+        except Exception as e:
+            print(f"Error resetting presence: {str(e)}")
 
     @activity.command(name="loop", hidden=True)
     @commands.is_owner()
@@ -291,7 +311,7 @@ class OwnerCommands(commands.Cog):
                     await asyncio.sleep(float(item.get("duration", 30)))
                     
         except asyncio.CancelledError:
-            await self.activity_reset(None)
+            await self._reset_presence()
 
     async def cog_error(self, ctx: commands.Context, error: Exception) -> None:
         """Global error handler for all commands in this cog."""
