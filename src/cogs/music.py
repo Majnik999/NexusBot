@@ -111,6 +111,7 @@ class Music(commands.Cog):
         self._last_notify: dict[int, float] = {}  # guild_id -> last notification timestamp
         self._lavalink_host: typing.Optional[str] = None
         self._lavalink_port: typing.Optional[int] = None
+        self._original_nicknames = {}  # Store original nicknames per guild
 
     async def connect_to_nodes(self):
         """Connects to the Lavalink node using the correct wavelink.Pool syntax."""
@@ -272,12 +273,17 @@ class Music(commands.Cog):
 
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
-        """Log succinctly when a track actually starts playing."""
+        """Log succinctly when a track actually starts playing and update nickname."""
         player: CustomPlayer = payload.player
         track = payload.track
         guild_name = player.guild.name if player.guild else "Unknown"
         guild_id = player.guild.id if player.guild else "N/A"
         requester = getattr(track, "requester", None)
+        
+        # Update nickname
+        if player.guild:
+            await self._update_bot_nickname(player.guild, track)
+
         if requester:
             logger.info(f"[{guild_name} ({guild_id})] Now playing: {track.title} (requested by {requester})")
         else:
@@ -298,6 +304,10 @@ class Music(commands.Cog):
             return
 
         if player.queue.is_empty:
+            # Reset nickname when queue is empty
+            if player.guild:
+                await self._update_bot_nickname(player.guild)
+
             # Prepare the "Finished playing" embed
             finished_embed = discord.Embed(
                 title="Playback Finished! ⏹️",
@@ -342,6 +352,10 @@ class Music(commands.Cog):
         vc, reply = await self.get_player_and_validate(interaction_or_ctx)
         if not vc: return
         
+        # Reset nickname before disconnecting
+        if vc.guild:
+            await self._update_bot_nickname(vc.guild)
+            
         guild_name = vc.guild.name
         guild_id = vc.guild.id
         channel_name = vc.channel.name
@@ -369,6 +383,10 @@ class Music(commands.Cog):
         if not vc or not vc.playing: return await reply("Nothing is playing to pause/resume! ⏸️▶️")
         await vc.pause(not vc.paused)
         status = "Paused" if vc.paused else "Resumed"
+        
+        # Update nickname to reflect new pause state
+        if vc.guild and vc.current:
+            await self._update_bot_nickname(vc.guild, vc.current)
         
         if not isinstance(interaction_or_ctx, discord.Interaction):
             await reply(f"Playback **{status}**.")
@@ -640,6 +658,32 @@ class Music(commands.Cog):
             except Exception:
                 # Catch-all to ensure this listener never raises
                 logger.exception(f"[{guild_id}] Error during empty-channel cleanup (ignored).")
+
+    async def _update_bot_nickname(self, guild: discord.Guild, track=None):
+        """Update the bot's nickname based on the current track."""
+        try:
+            if track:
+                # Get bot's original nickname if not stored
+                if guild.id not in self._original_nicknames:
+                    self._original_nicknames[guild.id] = guild.me.display_name
+
+                # Get player to check pause status
+                player: CustomPlayer = guild.voice_client
+                status_emoji = "⏸️" if player and player.paused else "▶️"
+
+                # Create new nickname with track info and status
+                base_name = self._original_nicknames[guild.id] or self.bot.user.name
+                new_nick = f"{base_name} |{status_emoji} {track.title}"
+                # Ensure nickname doesn't exceed Discord's 32-character limit
+                if len(new_nick) > 32:
+                    new_nick = new_nick[:29] + "..."
+            else:
+                # Reset to original nickname
+                new_nick = self._original_nicknames.get(guild.id, self.bot.user.name)
+
+            await guild.me.edit(nick=new_nick)
+        except Exception as e:
+            logger.warning(f"[{guild.id}] Failed to update nickname: {e}")
 
 async def setup(bot):
     music_cog = Music(bot)
