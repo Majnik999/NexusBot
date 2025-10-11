@@ -8,9 +8,9 @@ import asyncio
 
 # Default JSON example for activity loop (copy-paste ready)
 DEFAULT_ACTIVITY_LOOP_JSON = json.dumps([
-    {"type": "playing", "name": "Hello world", "duration": 30},
-    {"type": "watching", "name": "the sky", "duration": 45},
-    {"type": "listening", "name": "music", "duration": 20}
+    {"type": "playing", "name": "Hello world", "status": "online", "duration": 30},
+    {"type": "watching", "name": "the sky", "status": "idle", "duration": 45},
+    {"type": "listening", "name": "music", "status": "dnd", "duration": 20}
 ], indent=2)
 
 def help_one():
@@ -22,21 +22,27 @@ def help_one():
     embed.add_field(name=PREFIX+"bot help", value=f"Shows this message!", inline=False)
     embed.add_field(name=PREFIX+"bot quit", value=f"Turns off bot", inline=False)
     embed.add_field(name=PREFIX+"bot ping", value=f"Get bots latency!", inline=False)
-    #embed.add_field(name=PREFIX+"", value=f"", inline=False)
-    #embed.add_field(name=PREFIX+"", value=f"", inline=False)
-    #embed.add_field(name=PREFIX+"", value=f"", inline=False)
     
     embed2 = discord.Embed(
         title="🎮 Activity | Help",
-        description=f"Manage activity of bot from discord!"
+        description=f"Manage activity and status of bot from discord!"
     )
     
     embed2.add_field(name=PREFIX+"activity help", value=f"Shows this message!", inline=False)
-    embed2.add_field(name=PREFIX+"activity set <type> <input>", value=f"Set bot activity or status. Examples: `activity set activity playing Hello world`, `activity set status idle`", inline=False)
+    embed2.add_field(name=PREFIX+"activity set <type> <input>", value=f"Set bot activity or status. Examples:\n`activity set activity playing Hello world`\n`activity set status idle`", inline=False)
     embed2.add_field(name=PREFIX+"activity reset", value=f"Reset bot activity to default from settings!", inline=False)
+    embed2.add_field(name=PREFIX+"activity status", value=f"Shows current activity status and if loop is running", inline=False)
     embed2.add_field(
         name=PREFIX+"activity loop <json>",
-        value=f"Start looping activities via JSON. Example (copy & paste):\n```json\n{DEFAULT_ACTIVITY_LOOP_JSON}\n```\nUse `activity stop` to cancel.",
+        value=(
+            f"Start looping activities via JSON. Each item can have:\n"
+            f"`type`: playing/watching/listening/competing\n"
+            f"`name`: The activity text\n"
+            f"`status`: online/idle/dnd/invisible\n"
+            f"`duration`: Time in seconds\n"
+            f"Example:\n```json\n{DEFAULT_ACTIVITY_LOOP_JSON}\n```\n"
+            f"Use `activity stop` to cancel."
+        ),
         inline=False
     )
     
@@ -51,8 +57,15 @@ def help_one():
 class OwnerCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # task to hold background loop if started
         self.activity_loop_task = None
+        # Start default activity loop if configured
+        if DEFAULT_ACTIVITY:
+            try:
+                da = json.loads(DEFAULT_ACTIVITY) if isinstance(DEFAULT_ACTIVITY, str) else DEFAULT_ACTIVITY
+                if "loop" in da:
+                    self.activity_loop_task = self.bot.loop.create_task(self._run_activity_loop(da["loop"]))
+            except:
+                pass
 
     @commands.group(name="bot", invoke_without_command=True, hidden=True)
     @commands.is_owner()
@@ -90,56 +103,78 @@ class OwnerCommands(commands.Cog):
 
     @activity.command(name="set", hidden=True)
     @commands.is_owner()
-    async def activity_set(self, ctx, _type: str, *, content: str):
-        typ = _type.lower()
-        if typ == "status":
-            states = {
-                "online": discord.Status.online,
-                "idle": discord.Status.idle,
-                "dnd": discord.Status.do_not_disturb,
-                "invisible": discord.Status.invisible
-            }
-            state = states.get(content.lower())
-            if state is None:
-                await ctx.send("❌ Unknown status. Use one of: online, idle, dnd, invisible.")
+    async def activity_set(self, ctx, setting_type: str, *, content: str = None):
+        try:
+            if setting_type.lower() == "status":
+                states = {
+                    "online": discord.Status.online,
+                    "idle": discord.Status.idle,
+                    "dnd": discord.Status.do_not_disturb,
+                    "invisible": discord.Status.invisible
+                }
+                state = states.get(content.lower())
+                if state is None:
+                    await ctx.send("❌ Unknown status. Use one of: online, idle, dnd, invisible.")
+                    return
+                # Keep current activity when changing status
+                current_activity = self.bot.activity
+                await self.bot.change_presence(status=state, activity=current_activity)
+                await ctx.send(f"✅ Status set to `{content}`")
                 return
-            await self.bot.change_presence(status=state)
-            await ctx.send(f"✅ Status set to `{content}`")
-            return
 
-        if typ == "activity":
-            parts = content.split()
-            atype_str = parts[0].lower()
+            # Handle activity setting
+            parts = content.split() if content else []
+            atype_str = parts[0].lower() if parts else "playing"
+            name = " ".join(parts[1:]) if len(parts) > 1 else " ".join(parts)
+
             if atype_str not in ("playing", "listening", "watching", "competing"):
-                atype_str = "playing"
                 name = content
-            else:
-                name = " ".join(parts[1:])
-            
+                atype_str = "playing"
+
             atype_map = {
                 "playing": discord.ActivityType.playing,
                 "listening": discord.ActivityType.listening,
                 "watching": discord.ActivityType.watching,
                 "competing": discord.ActivityType.competing
             }
+            
+            # Keep current status when changing activity
+            current_status = self.bot.status or discord.Status.online
             activity = discord.Activity(type=atype_map[atype_str], name=name)
-            await self.bot.change_presence(activity=activity)
+            await self.bot.change_presence(status=current_status, activity=activity)
             await ctx.send(f"✅ Activity set: `{atype_str}` {name}")
-            return
 
-        await ctx.send("❌ Unknown type. Use `activity` or `status`.")
+        except Exception as e:
+            await ctx.send(f"❌ Error setting activity: {str(e)}")
 
     @activity.command(name="reset", hidden=True)
     @commands.is_owner()
     async def activity_reset(self, ctx):
         try:
-            # Try to parse DEFAULT_ACTIVITY as JSON if it's a string
+            # Cancel any existing loop
+            if self.activity_loop_task and not self.activity_loop_task.done():
+                self.activity_loop_task.cancel()
+                self.activity_loop_task = None
+
+            if not DEFAULT_ACTIVITY:
+                await self.bot.change_presence(activity=None, status=discord.Status.online)
+                await ctx.send("✅ Activity reset to none.")
+                return
+
+            # Handle string or dict DEFAULT_ACTIVITY
             da = json.loads(DEFAULT_ACTIVITY) if isinstance(DEFAULT_ACTIVITY, str) else DEFAULT_ACTIVITY
-            
+
+            # Check if default activity includes a loop configuration
+            if "loop" in da:
+                self.activity_loop_task = self.bot.loop.create_task(self._run_activity_loop(da["loop"]))
+                await ctx.send("✅ Default activity loop started.")
+                return
+
+            # Handle single activity setting
             status_str = da.get("status", "online")
             name = da.get("name", "")
             type_str = da.get("type", "playing")
-            
+
             status_map = {
                 "online": discord.Status.online,
                 "idle": discord.Status.idle,
@@ -152,15 +187,14 @@ class OwnerCommands(commands.Cog):
                 "watching": discord.ActivityType.watching,
                 "competing": discord.ActivityType.competing
             }
-            
+
             status = status_map.get(status_str.lower(), discord.Status.online)
             atype = atype_map.get(type_str.lower(), discord.ActivityType.playing)
             activity = discord.Activity(type=atype, name=name) if name else None
-            
+
             await self.bot.change_presence(status=status, activity=activity)
             await ctx.send("✅ Activity reset to default from settings.")
-        except json.JSONDecodeError:
-            await ctx.send("❌ Failed to parse default activity settings.")
+
         except Exception as e:
             await ctx.send(f"❌ Error resetting activity: {str(e)}")
 
@@ -204,6 +238,26 @@ class OwnerCommands(commands.Cog):
         else:
             await ctx.send("ℹ️ No active activity loop.")
 
+    @activity.command(name="status", hidden=True)
+    @commands.is_owner()
+    async def activity_status(self, ctx):
+        try:
+            current_activity = self.bot.activity
+            current_status = self.bot.status or discord.Status.online
+            loop_active = self.activity_loop_task and not self.activity_loop_task.done()
+            
+            status_msg = f"Status: `{current_status}`\n"
+            if current_activity:
+                status_msg += f"Activity: `{current_activity.type.name}` {current_activity.name}\n"
+            else:
+                status_msg += "Activity: None\n"
+                
+            status_msg += f"Loop active: `{'Yes' if loop_active else 'No'}`"
+            
+            await ctx.send(status_msg)
+        except Exception as e:
+            await ctx.send(f"❌ Error getting status: {str(e)}")
+
     async def _run_activity_loop(self, activities):
         atype_map = {
             "playing": discord.ActivityType.playing,
@@ -212,15 +266,24 @@ class OwnerCommands(commands.Cog):
             "competing": discord.ActivityType.competing
         }
         
+        status_map = {
+            "online": discord.Status.online,
+            "idle": discord.Status.idle,
+            "dnd": discord.Status.do_not_disturb,
+            "invisible": discord.Status.invisible
+        }
+        
         try:
             while True:
                 for item in activities:
                     typ = item.get("type", "playing").lower()
                     name = item.get("name", "")
+                    status_str = item.get("status", "online").lower()
                     duration = float(item.get("duration", 30))
                     
                     activity = discord.Activity(type=atype_map.get(typ, discord.ActivityType.playing), name=name)
-                    await self.bot.change_presence(activity=activity)
+                    status = status_map.get(status_str, discord.Status.online)
+                    await self.bot.change_presence(status=status, activity=activity)
                     await asyncio.sleep(duration)
                     
         except asyncio.CancelledError:
