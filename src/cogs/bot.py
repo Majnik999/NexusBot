@@ -1,39 +1,45 @@
+import json
+import asyncio
+from typing import List, Optional
+
 import discord
 from discord.ext import commands
+
 from settings import QUIT_COMMAND, PREFIX, DEFAULT_ACTIVITY
 from src.config.versions import BOT_VERSION as _BOT_VERSION
 
-import json
-import asyncio
-
-# Default JSON example for activity loop (copy-paste ready)
 DEFAULT_ACTIVITY_LOOP_JSON = json.dumps([
     {"type": "playing", "name": "Hello world", "status": "online", "duration": 30},
     {"type": "watching", "name": "the sky", "status": "idle", "duration": 45},
     {"type": "listening", "name": "music", "status": "dnd", "duration": 20}
 ], indent=2)
 
-def help_one():
+def help_one() -> List[discord.Embed]:
+    """Generate help embeds for bot and activity commands."""
     embed = discord.Embed(
         title="<:NexusBotprofilepicture:1419717002414653581> Bot | Help",
-        description=f"Manage bot from discord!"
+        description="Manage bot from discord!"
     )
     
-    embed.add_field(name=PREFIX+"bot help", value=f"Shows this message!", inline=False)
-    embed.add_field(name=PREFIX+"bot quit", value=f"Turns off bot", inline=False)
-    embed.add_field(name=PREFIX+"bot ping", value=f"Get bots latency!", inline=False)
+    embed.add_field(name=f"{PREFIX}bot help", value="Shows this message!", inline=False)
+    embed.add_field(name=f"{PREFIX}bot quit", value="Turns off bot", inline=False)
+    embed.add_field(name=f"{PREFIX}bot ping", value="Get bots latency!", inline=False)
     
     embed2 = discord.Embed(
         title="🎮 Activity | Help",
-        description=f"Manage activity and status of bot from discord!"
+        description="Manage activity and status of bot from discord!"
     )
     
-    embed2.add_field(name=PREFIX+"activity help", value=f"Shows this message!", inline=False)
-    embed2.add_field(name=PREFIX+"activity set <type> <input>", value=f"Set bot activity or status. Examples:\n`activity set activity playing Hello world`\n`activity set status idle`", inline=False)
-    embed2.add_field(name=PREFIX+"activity reset", value=f"Reset bot activity to default from settings!", inline=False)
-    embed2.add_field(name=PREFIX+"activity status", value=f"Shows current activity status and if loop is running", inline=False)
+    embed2.add_field(name=f"{PREFIX}activity help", value="Shows this message!", inline=False)
     embed2.add_field(
-        name=PREFIX+"activity loop <json>",
+        name=f"{PREFIX}activity set <type> <input>",
+        value="Set bot activity or status. Examples:\n`activity set activity playing Hello world`\n`activity set status idle`",
+        inline=False
+    )
+    embed2.add_field(name=f"{PREFIX}activity reset", value="Reset bot activity to default from settings!", inline=False)
+    embed2.add_field(name=f"{PREFIX}activity status", value="Shows current activity status and if loop is running", inline=False)
+    embed2.add_field(
+        name=f"{PREFIX}activity loop <json>",
         value=(
             f"Start looping activities via JSON. Each item can have:\n"
             f"`type`: playing/watching/listening/competing\n"
@@ -46,26 +52,27 @@ def help_one():
         inline=False
     )
     
-    
-    #embed3 = discord.Embed(
-    #    title="🔧 Config | Help",
-    #    description=f"Manage configuration from discord!"
-    #)
-    
     return [embed, embed2]
 
 class OwnerCommands(commands.Cog):
-    def __init__(self, bot):
+    """Cog for bot owner commands."""
+    
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.activity_loop_task = None
-        # Start default activity loop if configured
-        if DEFAULT_ACTIVITY:
-            try:
-                da = json.loads(DEFAULT_ACTIVITY) if isinstance(DEFAULT_ACTIVITY, str) else DEFAULT_ACTIVITY
-                if "loop" in da:
-                    self.activity_loop_task = self.bot.loop.create_task(self._run_activity_loop(da["loop"]))
-            except:
-                pass
+        self.activity_loop_task: Optional[asyncio.Task] = None
+        self._setup_default_activity()
+    
+    def _setup_default_activity(self) -> None:
+        """Set up default activity loop if configured."""
+        if not DEFAULT_ACTIVITY:
+            return
+            
+        try:
+            da = json.loads(DEFAULT_ACTIVITY) if isinstance(DEFAULT_ACTIVITY, str) else DEFAULT_ACTIVITY
+            if "loop" in da:
+                self.activity_loop_task = self.bot.loop.create_task(self._run_activity_loop(da["loop"]))
+        except Exception:
+            pass
 
     @commands.group(name="bot", invoke_without_command=True, hidden=True)
     @commands.is_owner()
@@ -81,7 +88,6 @@ class OwnerCommands(commands.Cog):
         await self.bot.close()
     
     @quiting.error
-    @quiting.error
     async def handle_error_quitting(self, ctx, _error):
         await ctx.send("❌ You are not owner or some error happened!")
     @botgroup.command(name="ping", hidden=True)
@@ -91,7 +97,6 @@ class OwnerCommands(commands.Cog):
         
         await ctx.send(f"Pong! Bot latency: `{latency}ms`!")
     
-    @botping.error
     @botping.error
     async def handle_error_botping(self, ctx, _error):
         await ctx.send("❌ You are not owner or some error happened!")
@@ -258,7 +263,8 @@ class OwnerCommands(commands.Cog):
         except Exception as e:
             await ctx.send(f"❌ Error getting status: {str(e)}")
 
-    async def _run_activity_loop(self, activities):
+    async def _run_activity_loop(self, activities: List[dict]) -> None:
+        """Run the activity loop with the given activities."""
         atype_map = {
             "playing": discord.ActivityType.playing,
             "listening": discord.ActivityType.listening,
@@ -276,30 +282,24 @@ class OwnerCommands(commands.Cog):
         try:
             while True:
                 for item in activities:
-                    typ = item.get("type", "playing").lower()
-                    name = item.get("name", "")
-                    status_str = item.get("status", "online").lower()
-                    duration = float(item.get("duration", 30))
-                    
-                    activity = discord.Activity(type=atype_map.get(typ, discord.ActivityType.playing), name=name)
-                    status = status_map.get(status_str, discord.Status.online)
+                    activity = discord.Activity(
+                        type=atype_map.get(item.get("type", "playing").lower(), discord.ActivityType.playing),
+                        name=item.get("name", "")
+                    )
+                    status = status_map.get(item.get("status", "online").lower(), discord.Status.online)
                     await self.bot.change_presence(status=status, activity=activity)
-                    await asyncio.sleep(duration)
+                    await asyncio.sleep(float(item.get("duration", 30)))
                     
         except asyncio.CancelledError:
-            # Reset to default activity
             await self.activity_reset(None)
 
-    @activity.error
-    @activity_set.error
-    @activity_reset.error
-    @activity_loop.error
-    @activity_stop.error
-    async def activity_error(self, ctx, error):
+    async def cog_error(self, ctx: commands.Context, error: Exception) -> None:
+        """Global error handler for all commands in this cog."""
         if isinstance(error, commands.NotOwner):
             await ctx.send("❌ This command is only for the bot owner.")
         else:
             await ctx.send(f"❌ An error occurred: {str(error)}")
 
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
+    """Add the cog to the bot."""
     await bot.add_cog(OwnerCommands(bot))
