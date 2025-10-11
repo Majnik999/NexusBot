@@ -58,27 +58,6 @@ class Wordle(commands.Cog):
                 return {int(k): v for k, v in data.items()}
         return {}
 
-    # helper to log a single summary for a finished game
-    def log_game_summary(self, user_id, user_name, result, word, guesses, channel_id=None, guild_id=None):
-        summary = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "user_id": user_id,
-            "user_name": user_name,
-            "result": result,  # "won", "lost", or "stopped"
-            "word": word,
-            "attempts": len(guesses),
-            "guesses": guesses,
-            "word_length": len(word) if word else None,
-            "channel_id": channel_id,
-            "guild_id": guild_id,
-            "version": WORDLE_VERSION
-        }
-        try:
-            logger.info("WordleGameSummary: " + json.dumps(summary, ensure_ascii=False))
-        except Exception:
-            # ensure logging never breaks the bot flow
-            logger.info(f"WordleGameSummary: user={user_id} result={result} word={word} attempts={len(guesses)}")
-
     @commands.group(name="wordle", invoke_without_command=True)
     async def wordle_group(self, ctx):
         embed = discord.Embed(
@@ -119,6 +98,9 @@ class Wordle(commands.Cog):
         embed.set_footer(text=f"Version: {WORDLE_VERSION}")
         img_file = self.generate_image(ctx.author.id)
         embed.set_image(url="attachment://wordle.png")
+        
+        logger.info(f"Wordle Game Started: User ({ctx.author.name}, {ctx.author.id}) started a new game with word '{word}' of length {length}.")
+        
         await ctx.send(embed=embed, file=img_file)
 
     @wordle_group.command(name="stop")
