@@ -8,6 +8,8 @@ from discord.ext import commands
 from settings import QUIT_COMMAND, PREFIX, DEFAULT_ACTIVITY
 from src.config.versions import BOT_VERSION as _BOT_VERSION
 
+from main import logger
+
 DEFAULT_ACTIVITY_LOOP_JSON = json.dumps([
     {"type": "playing", "name": "Hello world", "status": "online", "duration": 30},
     {"type": "watching", "name": "the sky", "status": "idle", "duration": 45},
@@ -69,10 +71,12 @@ class OwnerCommands(commands.Cog):
             
         try:
             da = json.loads(DEFAULT_ACTIVITY) if isinstance(DEFAULT_ACTIVITY, str) else DEFAULT_ACTIVITY
-            if "loop" in da:
+            if isinstance(da, dict) and "loop" in da:
                 self.activity_loop_task = self.bot.loop.create_task(self._run_activity_loop(da["loop"]))
-        except Exception:
-            pass
+            elif isinstance(da, list):
+                self.activity_loop_task = self.bot.loop.create_task(self._run_activity_loop(da))
+        except Exception as e:
+            logger.error(f"Error setting up default activity: {e}")
 
     @commands.group(name="bot", invoke_without_command=True, hidden=True)
     @commands.is_owner()
