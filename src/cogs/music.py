@@ -673,7 +673,7 @@ class Music(commands.Cog):
 
                 # Create new nickname with track info and status
                 base_name = self._original_nicknames[guild.id] or self.bot.user.name
-                new_nick = f"{base_name} |{status_emoji} {track.title}"
+                new_nick = f"{base_name} | {status_emoji} {track.title}"
                 # Ensure nickname doesn't exceed Discord's 32-character limit
                 if len(new_nick) > 32:
                     new_nick = new_nick[:29] + "..."
