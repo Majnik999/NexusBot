@@ -198,7 +198,7 @@ class Steam(commands.Cog):
                 embed.add_field(name="Price", value=price_text, inline=True)
                 embed.add_field(name="Release", value=release, inline=True)
                 embed.add_field(name="Platforms", value=", ".join(platforms_list), inline=True)
-                embed.add_field(name="Publisher", value=publishers, inline=False) # NEW FIELD
+                embed.add_field(name="Publisher", value=publishers, inline=True)
                 embed.add_field(name="Controller", value=controller, inline=True)
                 embed.add_field(name="Steam Deck", value=steam_deck, inline=True)
                 embed.add_field(name="App ID", value=str(appid), inline=True)
