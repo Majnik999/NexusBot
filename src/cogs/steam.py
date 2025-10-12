@@ -193,9 +193,13 @@ class Steam(commands.Cog):
 
                 await msg.edit(content="", embed=embed)
 
+                
+
                 # Send playable video links separately
+                # sends it in one message with markdown links
                 movies = info.get("movies", [])
-                for movie in movies[:2]:  # limit to 2 videos
+                one_message = ""
+                for movie in movies:
                     mp4_dict = movie.get("mp4", {})
                     if not mp4_dict:
                         continue
@@ -211,7 +215,9 @@ class Steam(commands.Cog):
                         else:
                             video_url = list(mp4_dict.values())[0]
 
-                    await ctx.send(f"[Video {movie.get('id', 'unknown')}]({video_url})")  # Discord will render playable video and send message like Video 0 (720p)
+                    one_message += f"[Video {movie.get('id', 'unknown')}]({video_url})\n"
+
+                await ctx.send(one_message)
 
         except Exception as e:
             await ctx.send(f"❌ An error occurred: {e}")
