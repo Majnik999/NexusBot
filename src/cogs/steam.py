@@ -211,7 +211,7 @@ class Steam(commands.Cog):
                         else:
                             video_url = list(mp4_dict.values())[0]
 
-                    await ctx.send(video_url)  # Discord will render playable video
+                    await ctx.send(f"[Video {movie.get('id', 'unknown')}]({video_url})")  # Discord will render playable video and send message like Video 0 (720p)
 
         except Exception as e:
             await ctx.send(f"❌ An error occurred: {e}")
