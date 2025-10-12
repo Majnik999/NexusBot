@@ -239,33 +239,65 @@ class Steam(commands.Cog):
     # ----- Manifest -----
     @steam.command(name="manifest")
     async def steam_manifest(self, ctx: commands.Context, *, game_name: str) -> None:
-        """Fetch manifest for a Steam game using official app list API."""
+        """Fetch manifest for a Steam game using official app list API, supporting both name and App ID."""
         msg = await ctx.send("🔎 Searching Steam... this may take a few seconds.")
+        
+        # NEW STEP 1: Check if input is an App ID
         try:
-            # Step 1: Get full app list
-            async with self.session.get("https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json") as resp:
-                data = await resp.json()
-            apps = data.get("applist", {}).get("apps", [])
+            app_id = int(game_name)
+            # If it's a number, we treat it as an App ID
+            is_id_search = True
+            app_id_str = str(app_id) # Store as string for URL
+            game_name_for_search = None # We'll find the name later
+        except ValueError:
+            # Not a number, so we search by name
+            is_id_search = False
+            app_id_str = None
+            game_name_for_search = game_name.lower() # Store for case-insensitive comparison
+            
+        try:
+            if not is_id_search:
+                # ORIGINAL STEP 1: Get full app list (Only if searching by name)
+                await msg.edit(content=f"🔎 Searching for game name: **{game_name}**...")
+                async with self.session.get("https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json") as resp:
+                    data = await resp.json()
+                apps = data.get("applist", {}).get("apps", [])
 
-            # Step 2: Local search
-            matches = [app for app in apps if game_name.lower() in app["name"].lower()]
-            if not matches:
-                await ctx.send(f"❌ No results found for **{game_name}**.")
-                return
+                # ORIGINAL STEP 2: Local search (Only if searching by name)
+                matches = [app for app in apps if game_name_for_search in app["name"].lower()]
+                if not matches:
+                    await ctx.send(f"❌ No results found for **{game_name}**.")
+                    return
 
-            app = matches[0]  # take first match
-            app_id = str(app["appid"])
-            game_name = app["name"]
-
-            # Step 3: Get header image
-            details_url = f"https://store.steampowered.com/api/appdetails?appids={app_id}&l=en"
+                # Take first match and set variables
+                app = matches[0]
+                app_id_str = str(app["appid"])
+                game_name = app["name"]
+            
+            # STEP 3: Get details (Now works for both ID and name search)
+            await msg.edit(content=f"🔎 Found App ID: {app_id_str}. Fetching details...")
+            details_url = f"https://store.steampowered.com/api/appdetails?appids={app_id_str}&l=en"
             async with self.session.get(details_url) as resp:
                 details = await resp.json()
-            header_img = details.get(app_id, {}).get("data", {}).get("header_image")
+                
+            # Check if Steam returned actual data for the ID
+            if not details.get(app_id_str, {}).get("success"):
+                # This handles cases where a valid App ID is entered but it's not a real game (or a private app)
+                await ctx.send(f"❌ Could not find public details for App ID **{app_id_str}**.")
+                return
+                
+            # Get data and name
+            app_data = details.get(app_id_str, {}).get("data", {})
+            header_img = app_data.get("header_image")
+            
+            # If we searched by ID, we need to grab the official name
+            if is_id_search:
+                game_name = app_data.get("name", f"Unknown Game ({app_id_str})")
+
 
             embed = discord.Embed(
                 title=f"Manifest for {game_name}",
-                description=f"Steam App ID: {app_id}",
+                description=f"Steam App ID: {app_id_str}",
                 color=discord.Color.blue()
             )
             if header_img:
@@ -273,12 +305,12 @@ class Steam(commands.Cog):
 
             await msg.edit(content="🔎 Fetching manifest...")
 
-            # Step 4: Fetch manifest from GitHub
-            manifest_url = f"https://codeload.github.com/SteamAutoCracks/ManifestHub/zip/refs/heads/{app_id}"
+            # Step 4: Fetch manifest from GitHub (App ID is app_id_str)
+            manifest_url = f"https://codeload.github.com/SteamAutoCracks/ManifestHub/zip/refs/heads/{app_id_str}"
             async with self.session.get(manifest_url) as resp:
                 if resp.status == 200:
                     file_data = await resp.read()
-                    file = discord.File(fp=io.BytesIO(file_data), filename=f"manifest_{app_id}.zip")
+                    file = discord.File(fp=io.BytesIO(file_data), filename=f"manifest_{app_id_str}.zip")
                     await msg.edit(content="", embed=embed, file=file)
                 else:
                     await msg.edit(content="", embed=discord.Embed(title="Error", description="No manifest found for this game", color=discord.Color.red()))
