@@ -218,18 +218,17 @@ class Steam(commands.Cog):
                     video_message = "🎥 **Videos/Trailers:**\n" + "\n".join(video_links)
 
                 
-                # --- 5. Send EVERYTHING together ---
-                all_embeds = [embed]
-                all_embeds += gallery_embeds # Add the gallery embeds
+                # --- 5. Send EVERYTHING together safely ---
+                all_embeds = [embed] + gallery_embeds  # main + screenshots
 
-                await msg.delete()
-                
-                await ctx.send(
-                    embeds=all_embeds
-                )
-                await ctx.send(content=video_message)
-                # Only process the first match
-                break 
+                # Discord allows max 10 embeds per message
+                BATCH_SIZE = 10
+                for i in range(0, len(all_embeds), BATCH_SIZE):
+                    batch = all_embeds[i:i+BATCH_SIZE]
+                    await ctx.send(embeds=batch)
+
+                if video_message:
+                    await ctx.send(content=video_message)
 
         except Exception as e:
             try:
