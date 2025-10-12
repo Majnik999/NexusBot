@@ -98,7 +98,7 @@ class Steam(commands.Cog):
     # ----- Search -----
     @steam.command(name="search")
     async def steam_search(self, ctx, *, argstr: str):
-        """Search Steam store with optional currency/platform"""
+        """Search Steam store reliably using official app list API."""
         flags, game_name = parse_flags(argstr)
         currency = flags.get("currency", "usd").lower()
         platform_filter = flags.get("platform")
@@ -107,116 +107,105 @@ class Steam(commands.Cog):
             await ctx.send("❌ Please provide a game name.")
             return
 
-        search_url = f"https://store.steampowered.com/api/storesearch/?term={urllib.parse.quote(game_name)}&cc={currency}&l=en"
-        async with self.session.get(search_url) as resp:
-            data = await resp.json()
-        items = data.get("items", [])[:10]
-        if not items:
-            await ctx.send(f"❌ No results for **{game_name}**.")
-            return
+        msg = await ctx.send("🔎 Searching Steam... this may take a few seconds.")
 
-        results = []
-        for item in items:
-            appid = item.get("id")
-            if not appid:
-                continue
-            details_url = f"https://store.steampowered.com/api/appdetails?appids={appid}&cc={currency}&l=en"
-            async with self.session.get(details_url) as dresp:
-                details = await dresp.json()
-            info = details.get(str(appid), {}).get("data")
-            if not info:
-                continue
+        try:
+            # Step 1: Get full app list
+            async with self.session.get("https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json") as resp:
+                data = await resp.json()
+            apps = data.get("applist", {}).get("apps", [])
 
-            # platform filter
-            if platform_filter:
-                platforms = [p.lower() for p, ok in info.get("platforms", {}).items() if ok]
-                if platform_filter.lower() not in platforms:
+            # Step 2: Local search
+            matches = [app for app in apps if game_name.lower() in app["name"].lower()]
+            if not matches:
+                await msg.edit(content=f"❌ No results found for **{game_name}**.")
+                return
+
+            matches = matches[:5]  # top 5 matches
+
+            # Step 3: Fetch details
+            for app in matches:
+                appid = app["appid"]
+                details_url = f"https://store.steampowered.com/api/appdetails?appids={appid}&cc={currency}&l=en"
+                async with self.session.get(details_url) as dresp:
+                    details = await dresp.json()
+                info = details.get(str(appid), {}).get("data")
+                if not info:
                     continue
 
-            results.append((appid, info))
-            if len(results) >= 5:
-                break
+                title = info.get("name", "Unknown")
+                desc = short(info.get("short_description", "No description"), 500)
+                release = info.get("release_date", {}).get("date", "Unknown")
+                is_free = info.get("is_free", False)
 
-        if not results:
-            await ctx.send("❌ No games matched your filters.")
-            return
+                # Price
+                price_text = "Free" if is_free else "Unknown"
+                if not is_free and info.get("price_overview"):
+                    po = info["price_overview"]
+                    final = po.get("final", 0) / 100
+                    initial = po.get("initial", 0) / 100
+                    discount = po.get("discount_percent", 0)
+                    price_text = f"{final:.2f} {currency.upper()}"
+                    if discount:
+                        price_text += f" (discount {discount}% — original {initial:.2f})"
 
-        for appid, info in results:
-            title = info.get("name", "Unknown")
-            steam_url = f"https://store.steampowered.com/app/{appid}"
-            desc = short(info.get("short_description", "No description"), 500)
-            release = info.get("release_date", {}).get("date", "Unknown")
-            is_free = info.get("is_free", False)
+                # Platform filter
+                platforms_list = [p.capitalize() for p, ok in info.get("platforms", {}).items() if ok] or ["N/A"]
+                if platform_filter and platform_filter.lower() not in [p.lower() for p in platforms_list]:
+                    continue
 
-            # price
-            price_text = "Free" if is_free else "Unknown"
-            if not is_free and info.get("price_overview"):
-                po = info["price_overview"]
-                final = po.get("final", 0) / 100
-                initial = po.get("initial", 0) / 100
-                discount = po.get("discount_percent", 0)
-                price_text = f"{final:.2f} {currency.upper()}"
-                if discount:
-                    price_text += f" (discount {discount}% — original {initial:.2f})"
+                controller = info.get("controller_support", "N/A")
+                steam_deck = info.get("steam_deck_compatibility", "N/A")
+                genres = ", ".join([g.get("description", "") for g in info.get("genres", [])]) or "N/A"
 
-            platforms_list = [p.capitalize() for p, ok in info.get("platforms", {}).items() if ok] or ["N/A"]
-            controller = info.get("controller_support", "N/A")
-            steam_deck = info.get("steam_deck_compatibility", "N/A")
-            genres = ", ".join([g.get("description", "") for g in info.get("genres", [])]) or "N/A"
+                header_img = info.get("header_image")
+                screenshots = info.get("screenshots", [])[:1]
+                screenshot_url = screenshots[0]["path_full"] if screenshots else None
 
-            header_img = info.get("header_image")
-            screenshots = info.get("screenshots", [])[:1]
-            screenshot_url = screenshots[0]["path_full"] if screenshots else None
+                embed = discord.Embed(title=title, url=f"https://store.steampowered.com/app/{appid}", description=desc, color=discord.Color.blurple())
+                if header_img:
+                    embed.set_thumbnail(url=header_img)
+                if screenshot_url:
+                    embed.set_image(url=screenshot_url)
+                embed.add_field(name="Price", value=price_text, inline=True)
+                embed.add_field(name="Release", value=release, inline=True)
+                embed.add_field(name="Platforms", value=", ".join(platforms_list), inline=True)
+                embed.add_field(name="Controller", value=controller, inline=True)
+                embed.add_field(name="Steam Deck", value=steam_deck, inline=True)
+                embed.add_field(name="Genres", value=genres, inline=False)
 
-            embed = discord.Embed(title=title, url=steam_url, description=desc, color=discord.Color.blurple())
-            if header_img:
-                embed.set_thumbnail(url=header_img)
-            if screenshot_url:
-                embed.set_image(url=screenshot_url)
-            embed.add_field(name="Price", value=price_text, inline=True)
-            embed.add_field(name="Release", value=release, inline=True)
-            embed.add_field(name="Platforms", value=", ".join(platforms_list), inline=True)
-            embed.add_field(name="Controller", value=controller, inline=True)
-            embed.add_field(name="Steam Deck", value=steam_deck, inline=True)
-            embed.add_field(name="Genres", value=genres, inline=False)
+                await ctx.send(embed=embed)
 
-            await ctx.send(embed=embed)
+        except Exception as e:
+            await ctx.send(f"❌ An error occurred: {e}")
+
 
     # ----- Manifest -----
     @steam.command(name="manifest")
     async def steam_manifest(self, ctx: commands.Context, *, game_name: str) -> None:
-        """Fetch manifest for a Steam game"""
+        """Fetch manifest for a Steam game using official app list API."""
         try:
-            # Search for the game
-            search_url = f"https://store.steampowered.com/api/storesearch/?term={urllib.parse.quote(game_name)}&l=en"
-            async with self.session.get(search_url, timeout=10) as resp:
-                if resp.status != 200:
-                    await ctx.send("❌ Failed to reach Steam store. Please try again later.")
-                    return
-                try:
-                    data = await resp.json()
-                except json.JSONDecodeError:
-                    await ctx.send("❌ Invalid response from Steam store.")
-                    return
+            # Step 1: Get full app list
+            async with self.session.get("https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json") as resp:
+                data = await resp.json()
+            apps = data.get("applist", {}).get("apps", [])
 
-            items = data.get("items")
-            if not items:
-                await ctx.send(f"❌ No results found for **{game_name}**")
+            # Step 2: Local search
+            matches = [app for app in apps if game_name.lower() in app["name"].lower()]
+            if not matches:
+                await ctx.send(f"❌ No results found for **{game_name}**.")
                 return
 
-            app_id = str(items[0]["id"])
-            game_name = items[0]["name"]
+            app = matches[0]  # take first match
+            app_id = str(app["appid"])
+            game_name = app["name"]
 
-            # Get game details for thumbnail
+            # Step 3: Get header image
             details_url = f"https://store.steampowered.com/api/appdetails?appids={app_id}&l=en"
-            async with self.session.get(details_url, timeout=10) as resp:
-                if resp.status != 200:
-                    header_img = None
-                else:
-                    details = await resp.json()
-                    header_img = details.get(app_id, {}).get("data", {}).get("header_image")
+            async with self.session.get(details_url) as resp:
+                details = await resp.json()
+            header_img = details.get(app_id, {}).get("data", {}).get("header_image")
 
-            # Build embed
             embed = discord.Embed(
                 title=f"Manifest for {game_name}",
                 description=f"Steam App ID: {app_id}",
@@ -225,9 +214,9 @@ class Steam(commands.Cog):
             if header_img:
                 embed.set_thumbnail(url=header_img)
 
-            # Get manifest zip from GitHub
+            # Step 4: Fetch manifest from GitHub
             manifest_url = f"https://codeload.github.com/SteamAutoCracks/ManifestHub/zip/refs/heads/{app_id}"
-            async with self.session.get(manifest_url, timeout=15) as resp:
+            async with self.session.get(manifest_url) as resp:
                 if resp.status == 200:
                     file_data = await resp.read()
                     file = discord.File(fp=io.BytesIO(file_data), filename=f"manifest_{app_id}.zip")
@@ -237,10 +226,9 @@ class Steam(commands.Cog):
                     embed.add_field(name="Error", value="No manifest found for this game")
                     await ctx.send(embed=embed)
 
-        except asyncio.TimeoutError:
-            await ctx.send("❌ Request timed out. Please try again later.")
-        except Exception:
-            await ctx.send("❌ An unexpected error occurred. Please try again.")
+        except Exception as e:
+            await ctx.send(f"❌ An error occurred: {e}")
+
 
     # ----- User scraping -----
     @steam.command(name="user")
