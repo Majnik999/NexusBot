@@ -131,24 +131,6 @@ class Steam(commands.Cog):
                 # Publishers
                 publishers = ", ".join(info.get("publishers", [])) or "N/A"
                 
-                # System Requirements
-                pc_reqs = info.get("pc_requirements", {})
-                min_req = pc_reqs.get("minimum", "N/A")
-                rec_req = pc_reqs.get("recommended", "N/A")
-                
-                # Clean up the HTML from the system requirements
-                import re
-                def clean_html_reqs(html_text):
-                    # Replace <br> and <li> with newlines, remove other tags
-                    text = html_text.replace("</li>", "\n").replace("<br>", "\n")
-                    clean = re.sub('<[^<]+?>', '', text)
-                    # Clean up some common Steam formatting strings
-                    clean = clean.replace("Minimum:", "**Minimum:**").replace("Recommended:", "**Recommended:**").strip()
-                    return clean
-
-                min_req_clean = clean_html_reqs(min_req)
-                rec_req_clean = clean_html_reqs(rec_req)
-                
                 # ---------------------------
 
                 # Old Data Extraction (same as before)
@@ -203,17 +185,6 @@ class Steam(commands.Cog):
                 embed.add_field(name="Steam Deck", value=steam_deck, inline=True)
                 embed.add_field(name="App ID", value=str(appid), inline=True)
                 embed.add_field(name="Genres", value=genres, inline=False)
-
-
-                # --- 2. Build the System Requirements Embed (NEW) ---
-                if min_req_clean != "N/A" or rec_req_clean != "N/A":
-                    
-                    # Add fields for Min and Rec requirements
-                    if min_req_clean != "N/A":
-                        embed.add_field(name="Minimum", value=short(min_req_clean, 1024), inline=False)
-                    if rec_req_clean != "N/A":
-                        embed.add_field(name="Recommended", value=short(rec_req_clean, 1024), inline=False)
-
 
                 # --- 3. Build the Gallery Embeds (Same as before) ---
                 gallery_embeds = []
