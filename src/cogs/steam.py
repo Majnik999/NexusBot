@@ -311,7 +311,8 @@ class Steam(commands.Cog):
                 if resp.status == 200:
                     file_data = await resp.read()
                     file = discord.File(fp=io.BytesIO(file_data), filename=f"manifest_{app_id_str}.zip")
-                    await msg.edit(content="", embed=embed, file=file)
+                    await msg.edit(content="", embed=embed)
+                    await ctx.send(file=file)
                 else:
                     await msg.edit(content="", embed=discord.Embed(title="Error", description="No manifest found for this game", color=discord.Color.red()))
 
