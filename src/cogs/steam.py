@@ -61,7 +61,7 @@ class Steam(commands.Cog):
         """Custom help embed for Steam commands"""
         embed = discord.Embed(
             title="Steam Commands — Help",
-            description="All commands for Steam operations (no API key required).",
+            description="All commands for Steam operations.",
             color=discord.Color.blue(),
         )
         embed.add_field(
