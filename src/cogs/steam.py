@@ -154,9 +154,26 @@ class Steam(commands.Cog):
                 if platform_filter and platform_filter.lower() not in [p.lower() for p in platforms_list]:
                     continue
 
-                controller = info.get("controller_support", "N/A")
-                steam_deck = info.get("steam_deck_compatibility", "N/A")
-                genres = ", ".join([g.get("description", "") for g in info.get("genres", [])]) or "N/A"
+                # Get controller support with more detailed fallback
+                controller = info.get("controller_support", "none")
+                if controller == "full":
+                    controller = "Full"
+                elif controller == "partial":
+                    controller = "Partial"
+                else:
+                    controller = "None"
+
+                # Get Steam Deck compatibility with more detailed status
+                steam_deck = info.get("steam_deck_compatibility", {})
+                if isinstance(steam_deck, dict):
+                    steam_deck = steam_deck.get("category", "Unknown")
+                else:
+                    steam_deck = "Unknown"
+
+                # Get genres with empty handling
+                genres = ", ".join([g.get("description", "") for g in info.get("genres", []) if g.get("description")])
+                if not genres:
+                    genres = "None listed"
 
                 header_img = info.get("header_image")
                 screenshots = info.get("screenshots", [])[:1]
@@ -174,10 +191,10 @@ class Steam(commands.Cog):
                 embed.add_field(name="Steam Deck", value=steam_deck, inline=True)
                 embed.add_field(name="Genres", value=genres, inline=False)
 
-                await ctx.send(embed=embed)
+                await msg.edit(embed=embed)
 
         except Exception as e:
-            await ctx.send(f"❌ An error occurred: {e}")
+            await msg.edit(f"❌ An error occurred: {e}")
 
 
     # ----- Manifest -----
