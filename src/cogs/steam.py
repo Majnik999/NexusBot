@@ -34,21 +34,8 @@ def parse_flags(argstr: str) -> Tuple[Dict[str, str], str]:
     return flags, cleaned
 
 
-def short(text: str, limit: int = 1900) -> str:
-    """Truncate text if it exceeds limit.
-    
-    Args:
-        text: Text to truncate
-        limit: Maximum length allowed
-        
-    Returns:
-        Truncated text with [...] suffix or original if under limit
-    """
-    if not text:
-        return "N/A"
-    if len(text) <= limit:
-        return text
-    return text[: limit - 200] + "\n\n[...] (truncated)"
+def short(text, max_length):
+    return text[:max_length] + "..." if len(text) > max_length else text
 
 
 class Steam(commands.Cog):
@@ -98,7 +85,10 @@ class Steam(commands.Cog):
     @steam.command(name="search")
     async def steam_search(self, ctx, *, argstr: str):
         """Search Steam store reliably using official app list API."""
-        flags, game_name = parse_flags(argstr)
+        # This function assumes 'parse_flags' is defined elsewhere and works
+        # If you didn't provide it, you might need a simple version like:
+        # flags = {}; game_name = argstr 
+        flags, game_name = parse_flags(argstr) 
         currency = flags.get("currency", "usd").lower()
         platform_filter = flags.get("platform")
 
@@ -106,10 +96,11 @@ class Steam(commands.Cog):
             await ctx.send("❌ Please provide a game name.")
             return
 
-        msg = await ctx.send("🔎 Searching Steam... this may take a few seconds.")
+        msg = await ctx.send("🔎 Searching Steam... this may be a few seconds.")
 
         try:
             # Step 1: Get full app list
+            # ... (rest of the app list search code is the same)
             async with self.session.get(
                 "https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json"
             ) as resp:
@@ -126,6 +117,8 @@ class Steam(commands.Cog):
 
             for app in matches:
                 appid = app["appid"]
+                steam_store_url = f"https://store.steampowered.com/app/{appid}" 
+                
                 details_url = f"https://store.steampowered.com/api/appdetails?appids={appid}&cc={currency}&l=en"
                 async with self.session.get(details_url) as dresp:
                     details = await dresp.json()
@@ -133,13 +126,37 @@ class Steam(commands.Cog):
                 if not info:
                     continue
 
-                # Basic info
+                # --- NEW DATA EXTRACTION ---
+                
+                # Publishers
+                publishers = ", ".join(info.get("publishers", [])) or "N/A"
+                
+                # System Requirements
+                pc_reqs = info.get("pc_requirements", {})
+                min_req = pc_reqs.get("minimum", "N/A")
+                rec_req = pc_reqs.get("recommended", "N/A")
+                
+                # Clean up the HTML from the system requirements
+                import re
+                def clean_html_reqs(html_text):
+                    # Replace <br> and <li> with newlines, remove other tags
+                    text = html_text.replace("</li>", "\n").replace("<br>", "\n")
+                    clean = re.sub('<[^<]+?>', '', text)
+                    # Clean up some common Steam formatting strings
+                    clean = clean.replace("Minimum:", "**Minimum:**").replace("Recommended:", "**Recommended:**").strip()
+                    return clean
+
+                min_req_clean = clean_html_reqs(min_req)
+                rec_req_clean = clean_html_reqs(rec_req)
+                
+                # ---------------------------
+
+                # Old Data Extraction (same as before)
                 title = info.get("name", "Unknown")
                 desc = short(info.get("short_description", "No description"), 500)
                 release = info.get("release_date", {}).get("date", "Unknown")
                 is_free = info.get("is_free", False)
 
-                # Price
                 price_text = "Free" if is_free else "Unknown"
                 if not is_free and info.get("price_overview"):
                     po = info["price_overview"]
@@ -148,9 +165,8 @@ class Steam(commands.Cog):
                     discount = po.get("discount_percent", 0)
                     price_text = f"{final:.2f} {currency.upper()}"
                     if discount:
-                        price_text += f" (discount {discount}% — original {initial:.2f})"
+                        price_text += f"\n(discount {discount}% — original {initial:.2f})"
 
-                # Platform filter
                 platforms_list = [p.capitalize() for p, ok in info.get("platforms", {}).items() if ok] or ["N/A"]
                 if platform_filter and platform_filter.lower() not in [p.lower() for p in platforms_list]:
                     continue
@@ -161,50 +177,66 @@ class Steam(commands.Cog):
 
                 header_img = info.get("header_image")
                 screenshots = info.get("screenshots", [])
+                movies = info.get("movies", [])
 
-                # --- Build single embed ---
+
+                # --- 1. Build the main info embed (Updated with Publishers) ---
                 embed_desc = short(desc, 500)
                 embed = discord.Embed(
                     title=title,
-                    url=f"https://store.steampowered.com/app/{appid}",
+                    url=steam_store_url, 
                     description=embed_desc,
                     color=discord.Color.blurple()
                 )
 
-                # Thumbnail = header image or first screenshot
                 if header_img:
                     embed.set_thumbnail(url=header_img)
                 elif screenshots:
                     embed.set_thumbnail(url=screenshots[0]["path_full"])
 
-                # Fields
+                # Fields - Publisher is now here
                 embed.add_field(name="Price", value=price_text, inline=True)
                 embed.add_field(name="Release", value=release, inline=True)
                 embed.add_field(name="Platforms", value=", ".join(platforms_list), inline=True)
+                embed.add_field(name="Publisher", value=publishers, inline=False) # NEW FIELD
                 embed.add_field(name="Controller", value=controller, inline=True)
                 embed.add_field(name="Steam Deck", value=steam_deck, inline=True)
                 embed.add_field(name="App ID", value=str(appid), inline=True)
                 embed.add_field(name="Genres", value=genres, inline=False)
 
-                # Screenshots gallery field
-                if screenshots:
-                    gallery_links = "\n".join([f"[Screenshot {i+1}]({shot['path_full']})" for i, shot in enumerate(screenshots[:4])])
-                    embed.add_field(name="Gallery", value=gallery_links, inline=False)
-
-                await msg.edit(content="", embed=embed)
-
                 
+                # --- 2. Build the System Requirements Embed (NEW) ---
+                req_embed = None
+                if min_req_clean != "N/A" or rec_req_clean != "N/A":
+                    req_embed = discord.Embed(
+                        title="💻 PC System Requirements",
+                        url=steam_store_url, # Same URL to keep embeds linked
+                        color=discord.Color.dark_green()
+                    )
+                    
+                    # Add fields for Min and Rec requirements
+                    if min_req_clean != "N/A":
+                        req_embed.add_field(name="Minimum", value=short(min_req_clean, 1024), inline=False)
+                    if rec_req_clean != "N/A":
+                        req_embed.add_field(name="Recommended", value=short(rec_req_clean, 1024), inline=False)
 
-                # Send playable video links separately
-                # sends it in one message with markdown links
-                movies = info.get("movies", [])
-                one_message = ""
+
+                # --- 3. Build the Gallery Embeds (Same as before) ---
+                gallery_embeds = []
+                for i, shot in enumerate(screenshots[:4]): 
+                    img_embed = discord.Embed(url=steam_store_url)
+                    img_embed.set_image(url=shot['path_full'])
+                    gallery_embeds.append(img_embed)
+                
+                
+                # --- 4. Build the Video Links message content (Same as before) ---
+                video_message = ""
+                video_links = []
+                # ... (rest of video logic is the same)
                 for movie in movies:
                     mp4_dict = movie.get("mp4", {})
                     if not mp4_dict:
                         continue
-
-                    # Choose best quality
                     if "max" in mp4_dict:
                         video_url = mp4_dict["max"]
                     else:
@@ -215,65 +247,33 @@ class Steam(commands.Cog):
                         else:
                             video_url = list(mp4_dict.values())[0]
 
-                    one_message += f"[Video {movie.get('id', 'unknown')}]({video_url})\n"
+                    video_links.append(f"[Video: {movie.get('name', 'Trailer')}]({video_url})")
 
-                await ctx.send(one_message)
+                if video_links:
+                    video_message = "🎥 **Videos/Trailers:**\n" + "\n".join(video_links)
 
-        except Exception as e:
-            await ctx.send(f"❌ An error occurred: {e}")
+                
+                # --- 5. Send EVERYTHING together ---
+                all_embeds = [embed]
+                if req_embed:
+                    all_embeds.append(req_embed) # Add the new Req embed
+                all_embeds += gallery_embeds # Add the gallery embeds
 
-
-
-    # ----- Manifest -----
-    @steam.command(name="manifest")
-    async def steam_manifest(self, ctx: commands.Context, *, game_name: str) -> None:
-        """Fetch manifest for a Steam game using official app list API."""
-        msg = await ctx.send("🔎 Searching Steam... this may take a few seconds.")
-        try:
-            # Step 1: Get full app list
-            async with self.session.get("https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json") as resp:
-                data = await resp.json()
-            apps = data.get("applist", {}).get("apps", [])
-
-            # Step 2: Local search
-            matches = [app for app in apps if game_name.lower() in app["name"].lower()]
-            if not matches:
-                await ctx.send(f"❌ No results found for **{game_name}**.")
-                return
-
-            app = matches[0]  # take first match
-            app_id = str(app["appid"])
-            game_name = app["name"]
-
-            # Step 3: Get header image
-            details_url = f"https://store.steampowered.com/api/appdetails?appids={app_id}&l=en"
-            async with self.session.get(details_url) as resp:
-                details = await resp.json()
-            header_img = details.get(app_id, {}).get("data", {}).get("header_image")
-
-            embed = discord.Embed(
-                title=f"Manifest for {game_name}",
-                description=f"Steam App ID: {app_id}",
-                color=discord.Color.blue()
-            )
-            if header_img:
-                embed.set_thumbnail(url=header_img)
-
-            await msg.edit(content="🔎 Fetching manifest...")
-
-            # Step 4: Fetch manifest from GitHub
-            manifest_url = f"https://codeload.github.com/SteamAutoCracks/ManifestHub/zip/refs/heads/{app_id}"
-            async with self.session.get(manifest_url) as resp:
-                if resp.status == 200:
-                    file_data = await resp.read()
-                    file = discord.File(fp=io.BytesIO(file_data), filename=f"manifest_{app_id}.zip")
-                    await msg.edit(content="", embed=embed, file=file)
-                else:
-                    await msg.edit(content="", embed=discord.Embed(title="Error", description="No manifest found for this game", color=discord.Color.red()))
+                await msg.delete()
+                
+                await ctx.send(
+                    content=video_message, 
+                    embeds=all_embeds
+                )
+                
+                # Only process the first match
+                break 
 
         except Exception as e:
-            await ctx.send(f"❌ An error occurred: {e}")
-
+            try:
+                await msg.edit(content=f"❌ Oops! Something went wrong: `{e}`", embed=None)
+            except:
+                await ctx.send(f"❌ Oops! Something went wrong: `{e}`")
 
     # ----- User scraping -----
     @steam.command(name="user")
