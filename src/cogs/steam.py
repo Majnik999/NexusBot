@@ -187,19 +187,23 @@ class Steam(commands.Cog):
                 movies = info.get("movies", [])
                 for movie in movies[:2]:  # Limit to 2 videos
                     if "mp4" in movie:
-                        # Prefer "max" if it exists, otherwise largest numeric
                         mp4_dict = movie["mp4"]
                         if "max" in mp4_dict:
-                            max_video = mp4_dict["max"]
+                            video_url = mp4_dict["max"]
                         else:
                             numeric_keys = [int(k) for k in mp4_dict.keys() if k.isdigit()]
                             if numeric_keys:
                                 best_quality = str(max(numeric_keys))
-                                max_video = mp4_dict[best_quality]
+                                video_url = mp4_dict[best_quality]
                             else:
-                                max_video = list(mp4_dict.values())[0]  # fallback
-                        gallery_embed = discord.Embed(url=store_url)
-                        gallery_embed.description = f"🎬 [Watch video]({max_video})"
+                                video_url = list(mp4_dict.values())[0]  # fallback
+                        
+                        gallery_embed = discord.Embed(
+                            title="Video",
+                            url=video_url,
+                            description=f"🎬 [Watch video]({video_url})",
+                            color=discord.Color.dark_blue()
+                        )
                         if "thumbnail" in movie:
                             gallery_embed.set_image(url=movie["thumbnail"])
                         gallery_embeds.append(gallery_embed)
