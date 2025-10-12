@@ -217,7 +217,7 @@ class Steam(commands.Cog):
 
                 # --- 3. Build the Gallery Embeds (Same as before) ---
                 gallery_embeds = []
-                for i, shot in enumerate(screenshots[:4]): 
+                for i, shot in enumerate(screenshots): 
                     img_embed = discord.Embed(url=steam_store_url)
                     img_embed.set_image(url=shot['path_full'])
                     gallery_embeds.append(img_embed)
