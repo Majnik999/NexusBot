@@ -33,7 +33,7 @@ def short(text: str, limit: int = 1900) -> str:
     return text[: limit - 200] + "\n\n[...] (truncated)"
 
 
-class SteamCustomHelp(commands.Cog):
+class Steam(commands.Cog):
     """Steam command group with custom help"""
 
     def __init__(self, bot):
@@ -292,5 +292,5 @@ class SteamCustomHelp(commands.Cog):
         await ctx.send(embed=embed)
 
 
-def setup(bot):
-    bot.add_cog(SteamCustomHelp(bot))
+async def setup(bot):
+    await bot.add_cog(Steam(bot))
