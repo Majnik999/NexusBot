@@ -236,6 +236,56 @@ class Steam(commands.Cog):
             except:
                 await ctx.send(f"❌ Oops! Something went wrong: `{e}`")
 
+    # ----- Manifest -----
+    @steam.command(name="manifest")
+    async def steam_manifest(self, ctx: commands.Context, *, game_name: str) -> None:
+        """Fetch manifest for a Steam game using official app list API."""
+        msg = await ctx.send("🔎 Searching Steam... this may take a few seconds.")
+        try:
+            # Step 1: Get full app list
+            async with self.session.get("https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json") as resp:
+                data = await resp.json()
+            apps = data.get("applist", {}).get("apps", [])
+
+            # Step 2: Local search
+            matches = [app for app in apps if game_name.lower() in app["name"].lower()]
+            if not matches:
+                await ctx.send(f"❌ No results found for **{game_name}**.")
+                return
+
+            app = matches[0]  # take first match
+            app_id = str(app["appid"])
+            game_name = app["name"]
+
+            # Step 3: Get header image
+            details_url = f"https://store.steampowered.com/api/appdetails?appids={app_id}&l=en"
+            async with self.session.get(details_url) as resp:
+                details = await resp.json()
+            header_img = details.get(app_id, {}).get("data", {}).get("header_image")
+
+            embed = discord.Embed(
+                title=f"Manifest for {game_name}",
+                description=f"Steam App ID: {app_id}",
+                color=discord.Color.blue()
+            )
+            if header_img:
+                embed.set_thumbnail(url=header_img)
+
+            await msg.edit(content="🔎 Fetching manifest...")
+
+            # Step 4: Fetch manifest from GitHub
+            manifest_url = f"https://codeload.github.com/SteamAutoCracks/ManifestHub/zip/refs/heads/{app_id}"
+            async with self.session.get(manifest_url) as resp:
+                if resp.status == 200:
+                    file_data = await resp.read()
+                    file = discord.File(fp=io.BytesIO(file_data), filename=f"manifest_{app_id}.zip")
+                    await msg.edit(content="", embed=embed, file=file)
+                else:
+                    await msg.edit(content="", embed=discord.Embed(title="Error", description="No manifest found for this game", color=discord.Color.red()))
+
+        except Exception as e:
+            await ctx.send(f"❌ An error occurred: {e}")
+
     # ----- User scraping -----
     @steam.command(name="user")
     async def steam_user(self, ctx, identifier: str):
