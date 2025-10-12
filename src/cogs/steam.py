@@ -2,12 +2,13 @@
 import aiohttp
 import asyncio
 import discord
-from discord.ext import commands
-from bs4 import BeautifulSoup
+import io
+import json
 import re
 import urllib.parse
-import json
-import io
+from bs4 import BeautifulSoup
+from discord.ext import commands
+from typing import Dict, Tuple, Optional
 
 from settings import PREFIX
 
@@ -15,7 +16,15 @@ from settings import PREFIX
 _FLAG_RE = re.compile(r"--(\w+)(?:\s+([^\s][^\-]*?)(?=(?:\s+--\w+)|$))", re.IGNORECASE)
 
 
-def parse_flags(argstr: str):
+def parse_flags(argstr: str) -> Tuple[Dict[str, str], str]:
+    """Parse command flags from argument string.
+    
+    Args:
+        argstr: The string containing flags and arguments
+        
+    Returns:
+        Tuple of (flags dict, cleaned string without flags)
+    """
     flags = {}
     for m in _FLAG_RE.finditer(argstr):
         key = m.group(1).lower()
@@ -26,6 +35,15 @@ def parse_flags(argstr: str):
 
 
 def short(text: str, limit: int = 1900) -> str:
+    """Truncate text if it exceeds limit.
+    
+    Args:
+        text: Text to truncate
+        limit: Maximum length allowed
+        
+    Returns:
+        Truncated text with [...] suffix or original if under limit
+    """
     if not text:
         return "N/A"
     if len(text) <= limit:
@@ -36,9 +54,9 @@ def short(text: str, limit: int = 1900) -> str:
 class Steam(commands.Cog):
     """Steam command group with custom help"""
 
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        self.session = aiohttp.ClientSession()
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
 
     def cog_unload(self):
         try:
@@ -166,21 +184,21 @@ class Steam(commands.Cog):
 
     # ----- Manifest -----
     @steam.command(name="manifest")
-    async def steam_manifest(self, ctx, *, game_name: str):
+    async def steam_manifest(self, ctx: commands.Context, *, game_name: str) -> None:
         """Fetch manifest for a Steam game"""
-        import io
-        import urllib.parse
-
-        search_url = f"https://store.steampowered.com/api/storesearch/?term={urllib.parse.quote(game_name)}&l=en"
-
         try:
             # Search for the game
+            search_url = f"https://store.steampowered.com/api/storesearch/?term={urllib.parse.quote(game_name)}&l=en"
             async with self.session.get(search_url, timeout=10) as resp:
                 if resp.status != 200:
                     await ctx.send("❌ Failed to reach Steam store. Please try again later.")
                     return
-                data = await resp.json()
-            
+                try:
+                    data = await resp.json()
+                except json.JSONDecodeError:
+                    await ctx.send("❌ Invalid response from Steam store.")
+                    return
+
             items = data.get("items")
             if not items:
                 await ctx.send(f"❌ No results found for **{game_name}**")
@@ -207,7 +225,7 @@ class Steam(commands.Cog):
             if header_img:
                 embed.set_thumbnail(url=header_img)
 
-            # Get manifest from GitHub
+            # Get manifest zip from GitHub
             manifest_url = f"https://codeload.github.com/SteamAutoCracks/ManifestHub/zip/refs/heads/{app_id}"
             async with self.session.get(manifest_url, timeout=15) as resp:
                 if resp.status == 200:
@@ -222,7 +240,6 @@ class Steam(commands.Cog):
         except asyncio.TimeoutError:
             await ctx.send("❌ Request timed out. Please try again later.")
         except Exception:
-            # Catch all other errors without exposing details
             await ctx.send("❌ An unexpected error occurred. Please try again.")
 
     # ----- User scraping -----
