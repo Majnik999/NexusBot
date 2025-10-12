@@ -30,7 +30,8 @@ HELP_DATA = {
         "commands": {
             PREFIX + "profile": "Get your profile info",
             PREFIX + "profile pic": "Get your profile picture",
-            PREFIX + "embed help": "Get help with embeds and embed builder"
+            PREFIX + "embed help": "Get help with embeds and embed builder",
+            PREFIX + "steam help": "Get help with steam commands",
         }
     }
 }
