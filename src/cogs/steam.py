@@ -204,21 +204,15 @@ class Steam(commands.Cog):
                 embed.add_field(name="App ID", value=str(appid), inline=True)
                 embed.add_field(name="Genres", value=genres, inline=False)
 
-                
+
                 # --- 2. Build the System Requirements Embed (NEW) ---
-                req_embed = None
                 if min_req_clean != "N/A" or rec_req_clean != "N/A":
-                    req_embed = discord.Embed(
-                        title="💻 PC System Requirements",
-                        url=steam_store_url, # Same URL to keep embeds linked
-                        color=discord.Color.dark_green()
-                    )
                     
                     # Add fields for Min and Rec requirements
                     if min_req_clean != "N/A":
-                        req_embed.add_field(name="Minimum", value=short(min_req_clean, 1024), inline=False)
+                        embed.add_field(name="Minimum", value=short(min_req_clean, 1024), inline=False)
                     if rec_req_clean != "N/A":
-                        req_embed.add_field(name="Recommended", value=short(rec_req_clean, 1024), inline=False)
+                        embed.add_field(name="Recommended", value=short(rec_req_clean, 1024), inline=False)
 
 
                 # --- 3. Build the Gallery Embeds (Same as before) ---
@@ -255,17 +249,14 @@ class Steam(commands.Cog):
                 
                 # --- 5. Send EVERYTHING together ---
                 all_embeds = [embed]
-                if req_embed:
-                    all_embeds.append(req_embed) # Add the new Req embed
                 all_embeds += gallery_embeds # Add the gallery embeds
 
                 await msg.delete()
                 
                 await ctx.send(
-                    content=video_message, 
                     embeds=all_embeds
                 )
-                
+                await ctx.send(content=video_message)
                 # Only process the first match
                 break 
 
