@@ -95,7 +95,6 @@ class Steam(commands.Cog):
         embed.set_footer(text="Example: !steam search volcanoids --currency eur --platform windows")
         await ctx.send(embed=embed)
 
-    # ----- Search -----
     @steam.command(name="search")
     async def steam_search(self, ctx, *, argstr: str):
         """Search Steam store reliably using official app list API."""
@@ -111,7 +110,9 @@ class Steam(commands.Cog):
 
         try:
             # Step 1: Get full app list
-            async with self.session.get("https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json") as resp:
+            async with self.session.get(
+                "https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json"
+            ) as resp:
                 data = await resp.json()
             apps = data.get("applist", {}).get("apps", [])
 
@@ -121,9 +122,8 @@ class Steam(commands.Cog):
                 await msg.edit(content=f"❌ No results found for **{game_name}**.")
                 return
 
-            matches = matches[:1] # top 1 matches
+            matches = matches[:1]  # top 1 match
 
-            # Step 3: Fetch details
             for app in matches:
                 appid = app["appid"]
                 details_url = f"https://store.steampowered.com/api/appdetails?appids={appid}&cc={currency}&l=en"
@@ -133,6 +133,7 @@ class Steam(commands.Cog):
                 if not info:
                     continue
 
+                # Basic info
                 title = info.get("name", "Unknown")
                 desc = short(info.get("short_description", "No description"), 500)
                 release = info.get("release_date", {}).get("date", "Unknown")
@@ -159,49 +160,10 @@ class Steam(commands.Cog):
                 genres = ", ".join([g.get("description", "") for g in info.get("genres", [])]) or "N/A"
 
                 header_img = info.get("header_image")
-                
-                # Create main embed
-                embed = discord.Embed(title=title, url=f"https://store.steampowered.com/app/{appid}", description=desc, color=discord.Color.blurple())
-                if header_img:
-                    embed.set_thumbnail(url=header_img)
-                embed.add_field(name="Price", value=price_text, inline=True)
-                embed.add_field(name="Release", value=release, inline=True)
-                embed.add_field(name="Platforms", value=", ".join(platforms_list), inline=True)
-                embed.add_field(name="Controller", value=controller, inline=True)
-                embed.add_field(name="Steam Deck", value=steam_deck, inline=True)
-                embed.add_field(name="App ID", value=str(appid), inline=True)
-                embed.add_field(name="Genres", value=genres, inline=False)
-
-                # --- Gallery in ONE embed ---
-                embed_desc = desc + "\n\n"
-
-                # Screenshots
                 screenshots = info.get("screenshots", [])
-                if screenshots:
-                    embed_desc += "**Screenshots:**\n"
-                    for i, shot in enumerate(screenshots[:4], 1):
-                        embed_desc += f"[Screenshot {i}]({shot['path_full']})\n"
-                    embed_desc += "\n"
 
-                # Videos
-                movies = info.get("movies", [])
-                if movies:
-                    embed_desc += "**Videos:**\n"
-                    for i, movie in enumerate(movies[:2], 1):
-                        mp4_dict = movie.get("mp4", {})
-                        if "max" in mp4_dict:
-                            video_url = mp4_dict["max"]
-                        else:
-                            numeric_keys = [int(k) for k in mp4_dict.keys() if k.isdigit()]
-                            if numeric_keys:
-                                best_quality = str(max(numeric_keys))
-                                video_url = mp4_dict[best_quality]
-                            else:
-                                video_url = list(mp4_dict.values())[0]  # fallback
-                        embed_desc += f"[Video {i}]({video_url})\n"
-                    embed_desc += "\n"
-
-                # Create single embed
+                # --- Build single embed ---
+                embed_desc = short(desc, 500)
                 embed = discord.Embed(
                     title=title,
                     url=f"https://store.steampowered.com/app/{appid}",
@@ -209,12 +171,13 @@ class Steam(commands.Cog):
                     color=discord.Color.blurple()
                 )
 
-                # Use header image if exists, otherwise first screenshot
+                # Thumbnail = header image or first screenshot
                 if header_img:
                     embed.set_thumbnail(url=header_img)
                 elif screenshots:
                     embed.set_thumbnail(url=screenshots[0]["path_full"])
 
+                # Fields
                 embed.add_field(name="Price", value=price_text, inline=True)
                 embed.add_field(name="Release", value=release, inline=True)
                 embed.add_field(name="Platforms", value=", ".join(platforms_list), inline=True)
@@ -223,11 +186,36 @@ class Steam(commands.Cog):
                 embed.add_field(name="App ID", value=str(appid), inline=True)
                 embed.add_field(name="Genres", value=genres, inline=False)
 
+                # Screenshots gallery field
+                if screenshots:
+                    gallery_links = "\n".join([f"[Screenshot {i+1}]({shot['path_full']})" for i, shot in enumerate(screenshots[:4])])
+                    embed.add_field(name="Gallery", value=gallery_links, inline=False)
+
                 await msg.edit(content="", embed=embed)
 
+                # Send playable video links separately
+                movies = info.get("movies", [])
+                for movie in movies[:2]:  # limit to 2 videos
+                    mp4_dict = movie.get("mp4", {})
+                    if not mp4_dict:
+                        continue
+
+                    # Choose best quality
+                    if "max" in mp4_dict:
+                        video_url = mp4_dict["max"]
+                    else:
+                        numeric_keys = [int(k) for k in mp4_dict.keys() if k.isdigit()]
+                        if numeric_keys:
+                            best_quality = str(max(numeric_keys))
+                            video_url = mp4_dict[best_quality]
+                        else:
+                            video_url = list(mp4_dict.values())[0]
+
+                    await ctx.send(video_url)  # Discord will render playable video
 
         except Exception as e:
             await ctx.send(f"❌ An error occurred: {e}")
+
 
 
     # ----- Manifest -----
