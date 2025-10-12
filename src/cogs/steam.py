@@ -159,22 +159,43 @@ class Steam(commands.Cog):
                 genres = ", ".join([g.get("description", "") for g in info.get("genres", [])]) or "N/A"
 
                 header_img = info.get("header_image")
-                screenshots = info.get("screenshots", [])[:1]
-                screenshot_url = screenshots[0]["path_full"] if screenshots else None
-
+                
+                # Create main embed
                 embed = discord.Embed(title=title, url=f"https://store.steampowered.com/app/{appid}", description=desc, color=discord.Color.blurple())
                 if header_img:
                     embed.set_thumbnail(url=header_img)
-                if screenshot_url:
-                    embed.set_image(url=screenshot_url)
                 embed.add_field(name="Price", value=price_text, inline=True)
                 embed.add_field(name="Release", value=release, inline=True)
                 embed.add_field(name="Platforms", value=", ".join(platforms_list), inline=True)
                 embed.add_field(name="Controller", value=controller, inline=True)
                 embed.add_field(name="Steam Deck", value=steam_deck, inline=True)
+                embed.add_field(name="App ID", value=str(appid), inline=True)
                 embed.add_field(name="Genres", value=genres, inline=False)
 
-                await msg.edit(content="", embed=embed)
+                # Create gallery embeds
+                gallery_embeds = []
+                store_url = f"https://store.steampowered.com/app/{appid}"
+
+                # Add screenshots to gallery
+                screenshots = info.get("screenshots", [])
+                for screenshot in screenshots[:4]:  # Limit to 4 screenshots
+                    gallery_embed = discord.Embed(url=store_url)
+                    gallery_embed.set_image(url=screenshot["path_full"])
+                    gallery_embeds.append(gallery_embed)
+
+                # Add videos/movies to gallery
+                movies = info.get("movies", [])
+                for movie in movies[:2]:  # Limit to 2 videos
+                    if "mp4" in movie:
+                        max_video = max(movie["mp4"].items(), key=lambda x: int(x[0]))[1]
+                        gallery_embed = discord.Embed(url=store_url)
+                        gallery_embed.description = f"🎬 [Watch video]({max_video})"
+                        if "thumbnail" in movie:
+                            gallery_embed.set_image(url=movie["thumbnail"])
+                        gallery_embeds.append(gallery_embed)
+
+                # Send all embeds
+                await msg.edit(content="", embeds=[embed] + gallery_embeds)
 
         except Exception as e:
             await ctx.send(f"❌ An error occurred: {e}")
@@ -184,6 +205,7 @@ class Steam(commands.Cog):
     @steam.command(name="manifest")
     async def steam_manifest(self, ctx: commands.Context, *, game_name: str) -> None:
         """Fetch manifest for a Steam game using official app list API."""
+        msg = await ctx.send("🔎 Searching Steam... this may take a few seconds.")
         try:
             # Step 1: Get full app list
             async with self.session.get("https://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=json") as resp:
@@ -214,17 +236,17 @@ class Steam(commands.Cog):
             if header_img:
                 embed.set_thumbnail(url=header_img)
 
+            await msg.edit(content="🔎 Fetching manifest...")
+
             # Step 4: Fetch manifest from GitHub
             manifest_url = f"https://codeload.github.com/SteamAutoCracks/ManifestHub/zip/refs/heads/{app_id}"
             async with self.session.get(manifest_url) as resp:
                 if resp.status == 200:
                     file_data = await resp.read()
                     file = discord.File(fp=io.BytesIO(file_data), filename=f"manifest_{app_id}.zip")
-                    await ctx.send(embed=embed)
-                    await ctx.send(file=file)
+                    await msg.edit(content="", embed=embed, file=file)
                 else:
-                    embed.add_field(name="Error", value="No manifest found for this game")
-                    await ctx.send(embed=embed)
+                    await msg.edit(content="", embed=discord.Embed(title="Error", description="No manifest found for this game", color=discord.Color.red()))
 
         except Exception as e:
             await ctx.send(f"❌ An error occurred: {e}")
