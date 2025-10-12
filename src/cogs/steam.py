@@ -172,22 +172,23 @@ class Steam(commands.Cog):
                 embed.add_field(name="App ID", value=str(appid), inline=True)
                 embed.add_field(name="Genres", value=genres, inline=False)
 
-                # Create gallery embeds
-                gallery_embeds = []
-                store_url = f"https://store.steampowered.com/app/{appid}"
+                # --- Gallery in ONE embed ---
+                embed_desc = desc + "\n\n"
 
-                # Add screenshots to gallery
+                # Screenshots
                 screenshots = info.get("screenshots", [])
-                for screenshot in screenshots[:4]:  # Limit to 4 screenshots
-                    gallery_embed = discord.Embed(url=store_url)
-                    gallery_embed.set_image(url=screenshot["path_full"])
-                    gallery_embeds.append(gallery_embed)
+                if screenshots:
+                    embed_desc += "**Screenshots:**\n"
+                    for i, shot in enumerate(screenshots[:4], 1):
+                        embed_desc += f"[Screenshot {i}]({shot['path_full']})\n"
+                    embed_desc += "\n"
 
-                # Add videos/movies to gallery
+                # Videos
                 movies = info.get("movies", [])
-                for movie in movies[:2]:  # Limit to 2 videos
-                    if "mp4" in movie:
-                        mp4_dict = movie["mp4"]
+                if movies:
+                    embed_desc += "**Videos:**\n"
+                    for i, movie in enumerate(movies[:2], 1):
+                        mp4_dict = movie.get("mp4", {})
                         if "max" in mp4_dict:
                             video_url = mp4_dict["max"]
                         else:
@@ -197,19 +198,33 @@ class Steam(commands.Cog):
                                 video_url = mp4_dict[best_quality]
                             else:
                                 video_url = list(mp4_dict.values())[0]  # fallback
-                        
-                        gallery_embed = discord.Embed(
-                            title="Video",
-                            url=video_url,
-                            description=f"🎬 [Watch video]({video_url})",
-                            color=discord.Color.dark_blue()
-                        )
-                        if "thumbnail" in movie:
-                            gallery_embed.set_image(url=movie["thumbnail"])
-                        gallery_embeds.append(gallery_embed)
+                        embed_desc += f"[Video {i}]({video_url})\n"
+                    embed_desc += "\n"
 
-                # Send all embeds
-                await msg.edit(content="", embeds=[embed] + gallery_embeds)
+                # Create single embed
+                embed = discord.Embed(
+                    title=title,
+                    url=f"https://store.steampowered.com/app/{appid}",
+                    description=embed_desc,
+                    color=discord.Color.blurple()
+                )
+
+                # Use header image if exists, otherwise first screenshot
+                if header_img:
+                    embed.set_thumbnail(url=header_img)
+                elif screenshots:
+                    embed.set_thumbnail(url=screenshots[0]["path_full"])
+
+                embed.add_field(name="Price", value=price_text, inline=True)
+                embed.add_field(name="Release", value=release, inline=True)
+                embed.add_field(name="Platforms", value=", ".join(platforms_list), inline=True)
+                embed.add_field(name="Controller", value=controller, inline=True)
+                embed.add_field(name="Steam Deck", value=steam_deck, inline=True)
+                embed.add_field(name="App ID", value=str(appid), inline=True)
+                embed.add_field(name="Genres", value=genres, inline=False)
+
+                await msg.edit(content="", embed=embed)
+
 
         except Exception as e:
             await ctx.send(f"❌ An error occurred: {e}")
