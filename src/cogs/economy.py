@@ -19,7 +19,7 @@ class Economy(commands.Cog):
         self.voice_sessions = {}
         self.voice_reward_interval_minutes = VOICE_REWARD_INTERVAL_MINUTES
         self.voice_reward_amount = VOICE_REWARD_AMOUNT
-        
+
     async def initialize_database(self):
         logger.info("Initializing database")
         async with aiosqlite.connect(DB_PATH) as db:
@@ -108,11 +108,12 @@ class Economy(commands.Cog):
                 break
             await self.update_balance(member.id, self.voice_reward_amount)
             try:
-                await member.send(f"🎉 You received {self.voice_reward_amount} coins for staying in voice!")
+                await member.send(f"🎉 You received `{self.voice_reward_amount}` coins for listening to music!")
             except discord.Forbidden:
-                logger.debug(f"Could not DM {member.id} about voice reward (DMs closed)")
+                channel = member.voice.channel
+                await channel.send(f"🎉 {member.mention} received `{self.voice_reward_amount}` coins for listening to music!", delete_after=120)
             except Exception as e:
-                logger.warning(f"Failed to DM {member.id} about voice reward: {e}")
+                logger.warning(f"Failed to announce {member.name} ({member.id}) about voice reward: {e}")
         self.voice_sessions.pop((member.guild.id, member.id), None)
         interval = self.voice_reward_interval_minutes * 60
         while True:
