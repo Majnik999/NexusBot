@@ -219,6 +219,7 @@ class Steam(commands.Cog):
 
                 
                 # --- 5. Send EVERYTHING together safely ---
+                await msg.delete()
                 all_embeds = [embed] + gallery_embeds  # main + screenshots
 
                 # Discord allows max 10 embeds per message
