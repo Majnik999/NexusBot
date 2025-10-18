@@ -6,7 +6,7 @@ import random
 import datetime
 import asyncio
 from main import logger
-from settings import PREFIX, DEFAULT_DAILY_REWARD, FISH_CATCH_CHANCE_PERCENTAGE, DAILY_COOLDOWN_HOURS, SHOP_PAGE_SIZE, EMOJIS, GAMBLE_LOSE_COLOR, GAMBLE_WIN_COLOR, DAILY_COLOR, BALANCE_COLOR, INVENTORY_COLOR, LOOT_COLOR, SELL_COLOR, HELP_COLOR, FISH_CHANCES, FISH_ITEMS, DIG_ITEMS, DIG_CHANCES, COOLDOWN_DIG_FISH_MINUTES, BLACK_JACK_SUITS, BLACK_JACK_RANKS, CHOP_NOT_FALL_TREE_CHANCE_PERCENTAGE, CHOP_ITEMS, CHOP_CHANCES
+from settings import PREFIX, DEFAULT_DAILY_REWARD, FISH_CATCH_CHANCE_PERCENTAGE, DAILY_COOLDOWN_HOURS, SHOP_PAGE_SIZE, EMOJIS, GAMBLE_LOSE_COLOR, GAMBLE_WIN_COLOR, DAILY_COLOR, BALANCE_COLOR, INVENTORY_COLOR, LOOT_COLOR, SELL_COLOR, HELP_COLOR, FISH_CHANCES, FISH_ITEMS, DIG_ITEMS, DIG_CHANCES, COOLDOWN_DIG_FISH_MINUTES, BLACK_JACK_SUITS, BLACK_JACK_RANKS, CHOP_NOT_FALL_TREE_CHANCE_PERCENTAGE, CHOP_ITEMS, CHOP_CHANCES, VOICE_REWARD_INTERVAL_MINUTES, VOICE_REWARD_AMOUNT
 from src.config.versions import ECONOMY_VERSION
 
 # ===================== CONFIG =====================
@@ -16,12 +16,6 @@ DB_PATH = "src/databases/economy.db"
 class Economy(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
-    # ================= INITIALIZATION =================
-    async def cog_load(self):
-        logger.info("Cog load started")
-        await self.initialize_database()
-        logger.info("Cog load finished and database initialized")
 
     async def initialize_database(self):
         logger.info("Initializing database")
@@ -59,6 +53,102 @@ class Economy(commands.Cog):
             
             await db.commit()
         logger.debug("Database schema ensured")
+
+    self.voice_sessions = {}
+    self.voice_reward_interval_minutes = VOICE_REWARD_INTERVAL_MINUTES
+    self.voice_reward_amount = VOICE_REWARD_AMOUNT
+
+    # ================= INITIALIZATION =================
+    async def cog_load(self):
+        logger.info("Cog load started")
+        await self.initialize_database()
+        logger.info("Cog load finished and database initialized")
+
+    def cog_unload(self):
+        sessions = list(self.voice_sessions.values())
+        self.voice_sessions.clear()
+        for session in sessions:
+            try:
+                session["task"].cancel()
+            except Exception:
+                pass
+
+    def stop_voice_session(self, member: discord.Member):
+        key = (member.guild.id, member.id)
+        session = self.voice_sessions.pop(key, None)
+        if session:
+            try:
+                session["task"].cancel()
+            except Exception:
+                pass
+
+    def start_voice_session(self, member: discord.Member, channel: discord.VoiceChannel):
+        if member.bot:
+            return
+        key = (member.guild.id, member.id)
+        existing = self.voice_sessions.get(key)
+        if existing and not existing["task"].done() and existing["channel_id"] == channel.id:
+            return
+        if existing:
+            try:
+                existing["task"].cancel()
+            except Exception:
+                pass
+        task = asyncio.create_task(self._voice_reward_loop(member))
+        self.voice_sessions[key] = {"channel_id": channel.id, "task": task}
+
+    async def _voice_reward_loop(self, member: discord.Member):
+        interval = self.voice_reward_interval_minutes * 60
+        while True:
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
+            voice_client = next((vc for vc in self.bot.voice_clients if vc.guild == member.guild), None)
+            if not voice_client or not member.voice or not member.voice.channel or member.voice.channel.id != voice_client.channel.id:
+                break
+            await self.update_balance(member.id, self.voice_reward_amount)
+            try:
+                await member.send(f"🎉 You received {self.voice_reward_amount} coins for staying in voice!")
+            except discord.Forbidden:
+                logger.debug(f"Could not DM {member.id} about voice reward (DMs closed)")
+            except Exception as e:
+                logger.warning(f"Failed to DM {member.id} about voice reward: {e}")
+        self.voice_sessions.pop((member.guild.id, member.id), None)
+        interval = self.voice_reward_interval_minutes * 60
+        while True:
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
+            voice_client = next((vc for vc in self.bot.voice_clients if vc.guild == member.guild), None)
+            if not voice_client or not member.voice or not member.voice.channel or member.voice.channel.id != voice_client.channel.id:
+                break
+            await self.update_balance(member.id, self.voice_reward_amount)
+        self.voice_sessions.pop((member.guild.id, member.id), None)
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        voice_client = next((vc for vc in self.bot.voice_clients if vc.guild == member.guild), None)
+
+        if member.id == self.bot.user.id:
+            for (guild_id, user_id), session in list(self.voice_sessions.items()):
+                if guild_id == member.guild.id:
+                    try:
+                        session["task"].cancel()
+                    except Exception:
+                        pass
+                    del self.voice_sessions[(guild_id, user_id)]
+            if after.channel:
+                for m in after.channel.members:
+                    if not m.bot:
+                        self.start_voice_session(m, after.channel)
+            return
+
+        if voice_client and after.channel and voice_client.channel and after.channel.id == voice_client.channel.id:
+            self.start_voice_session(member, after.channel)
+        else:
+            self.stop_voice_session(member)
 
     # ================= HELPER FUNCTIONS =================
     async def get_cooldown(self, user_id: int, command: str) -> int:
@@ -579,7 +669,7 @@ class Economy(commands.Cog):
 
             async def interaction_check(self, interaction: discord.Interaction) -> bool:
                 if interaction.user.id != ctx.author.id:
-                    await interaction.response.send_message("You are not allowed to use this control.", ephemeral=True)
+                    await interaction.response.send_message("You are not allowed to use this control.")
                     return False
                 return True
 
@@ -643,7 +733,7 @@ class Economy(commands.Cog):
         # If no member provided — show a selection menu
         if member is None:
             options = [
-                Select(label=m.display_name, value=str(m.id))
+                discord.SelectOption(label=m.display_name, value=str(m.id))
                 for m in ctx.guild.members if not m.bot and m != ctx.author
             ]
             if not options:
@@ -660,7 +750,15 @@ class Economy(commands.Cog):
                 )
 
             select.callback = select_callback
-            view = View()
+
+            class SelectUserView(View):
+                async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                    if interaction.user.id != ctx.author.id:
+                        await interaction.response.send_message("You are not allowed to use this control.")
+                        return False
+                    return True
+
+            view = SelectUserView()
             view.add_item(select)
             return await ctx.send("👥 Select a user to trade with:", view=view)
 
@@ -754,7 +852,7 @@ class Economy(commands.Cog):
 
             async def interaction_check(self, interaction: discord.Interaction) -> bool:
                 if interaction.user.id != self.allowed_user_id:
-                    await interaction.response.send_message("You are not allowed to use this control.", ephemeral=True)
+                    await interaction.response.send_message("You are not allowed to use this control.")
                     return False
                 return True
 
@@ -768,18 +866,18 @@ class Economy(commands.Cog):
                 embed = create_trade_embed()
                 if session["initiator_msg"]:
                     try:
-                        await session["initiator_msg"].edit(embed=embed, view=session["initiator_msg"].components and session["initiator_msg"].components[0])
+                        await session["initiator_msg"].edit(embed=embed)
                     except Exception:
                         pass
                 if session["partner_msg"]:
                     try:
-                        await session["partner_msg"].edit(embed=embed, view=session["partner_msg"].components and session["partner_msg"].components[0])
+                        await session["partner_msg"].edit(embed=embed)
                     except Exception:
                         pass
-                await interaction.response.send_message("✅ Selection updated.", ephemeral=True)
+                await interaction.response.send_message("✅ Selection updated.")
 
             async def on_set_coins(self, interaction: discord.Interaction):
-                await interaction.response.send_message("Please reply in this DM with the amount of coins you want to offer (integer). Send 0 to offer none. Timeout 60s.", ephemeral=True)
+                await interaction.response.send_message("Please reply in this DM with the amount of coins you want to offer (integer). Send 0 to offer none. Timeout 60s.")
                 def check(m: discord.Message):
                     return m.author.id == interaction.user.id and isinstance(m.channel, discord.DMChannel)
                 try:
@@ -789,7 +887,7 @@ class Economy(commands.Cog):
                         if amount < 0:
                             raise ValueError()
                     except Exception:
-                        return await interaction.followup.send("❌ Invalid amount. Please enter a non-negative integer.", ephemeral=True)
+                        return await interaction.followup.send("❌ Invalid amount. Please enter a non-negative integer.")
                     if self.is_initiator:
                         session["initiator_coins"] = amount
                     else:
@@ -798,17 +896,17 @@ class Economy(commands.Cog):
                     embed = create_trade_embed()
                     if session["initiator_msg"]:
                         try:
-                            await session["initiator_msg"].edit(embed=embed, view=session["initiator_msg"].components and session["initiator_msg"].components[0])
+                            await session["initiator_msg"].edit(embed=embed)
                         except Exception:
                             pass
                     if session["partner_msg"]:
                         try:
-                            await session["partner_msg"].edit(embed=embed, view=session["partner_msg"].components and session["partner_msg"].components[0])
+                            await session["partner_msg"].edit(embed=embed)
                         except Exception:
                             pass
-                    await interaction.followup.send(f"✅ Coins set to {amount}.", ephemeral=True)
+                    await interaction.followup.send(f"✅ Coins set to {amount}.")
                 except asyncio.TimeoutError:
-                    await interaction.followup.send("⏰ Timed out; no coins were set.", ephemeral=True)
+                    await interaction.followup.send("⏰ Timed out; no coins were set.")
 
             async def on_cancel(self, interaction: discord.Interaction):
                 session["active"] = False
@@ -820,16 +918,16 @@ class Economy(commands.Cog):
                         await session["partner_msg"].edit(content="❌ Trade cancelled.", embed=None, view=None)
                 except Exception:
                     pass
-                await interaction.response.send_message("❌ Trade cancelled.", ephemeral=True)
+                await interaction.response.send_message("❌ Trade cancelled.")
                 self.stop()
 
             async def on_propose(self, interaction: discord.Interaction):
                 # Only initiator will have this; sends confirmation to partner
                 if not self.is_initiator:
-                    return await interaction.response.send_message("Only the trade initiator can propose the trade.", ephemeral=True)
+                    return await interaction.response.send_message("Only the trade initiator can propose the trade.")
                 # Basic validation: ensure something offered (items or coins)
                 if not session["initiator_items"] and session["initiator_coins"] == 0:
-                    return await interaction.response.send_message("You must offer at least items or coins to propose.", ephemeral=True)
+                    return await interaction.response.send_message("You must offer at least items or coins to propose.")
 
                 # Send confirmation to partner with accept/reject buttons
                 confirm_embed = discord.Embed(title="🔔 Trade Confirmation Request", color=BALANCE_COLOR)
@@ -857,7 +955,7 @@ class Economy(commands.Cog):
 
                     async def interaction_check(self, inter: discord.Interaction) -> bool:
                         if inter.user.id != member.id:
-                            await inter.response.send_message("You are not allowed to respond to this confirmation.", ephemeral=True)
+                            await inter.response.send_message("You are not allowed to respond to this confirmation.")
                             return False
                         return True
 
@@ -872,15 +970,15 @@ class Economy(commands.Cog):
                         self.stop()
 
                 try:
-                    confirm_msg = await member.send(embed=confirm_embed, view=ConfirmView())
+                    confirm_view = ConfirmView()
+                    confirm_msg = await member.send(embed=confirm_embed, view=confirm_view)
                 except discord.Forbidden:
-                    return await interaction.response.send_message(f"❌ Could not DM {member.display_name} to request confirmation.", ephemeral=True)
+                    return await interaction.response.send_message(f"❌ Could not DM {member.display_name} to request confirmation.")
 
                 # wait for partner response
                 try:
-                    # wait until the confirm view stops
-                    await confirm_msg.view.wait()
-                    res = confirm_msg.view.result
+                    await confirm_view.wait()
+                    res = confirm_view.result
                 except Exception:
                     res = None
 
@@ -894,7 +992,7 @@ class Economy(commands.Cog):
                             await session["partner_msg"].edit(content="❌ Trade declined or timed out.", embed=None, view=None)
                     except Exception:
                         pass
-                    return await interaction.followup.send("❌ Trade was declined or timed out.", ephemeral=True)
+                    return await interaction.followup.send("❌ Trade was declined or timed out.")
 
                 # Partner accepted — finalize trade after re-checks
                 # Re-fetch inventories and balances
@@ -915,7 +1013,7 @@ class Economy(commands.Cog):
                                 await session["initiator_msg"].edit(content="❌ Trade failed: items changed.", embed=None, view=None)
                         except Exception:
                             pass
-                        return await interaction.followup.send("❌ Trade failed: initiator no longer has offered items.", ephemeral=True)
+                        return await interaction.followup.send("❌ Trade failed: initiator no longer has offered items.")
                 for it in session["partner_items"]:
                     if fresh_their_inv.get(it, 0) < 1:
                         try:
@@ -927,13 +1025,13 @@ class Economy(commands.Cog):
                                 await session["partner_msg"].edit(content="❌ Trade failed: items changed.", embed=None, view=None)
                         except Exception:
                             pass
-                        return await interaction.followup.send("❌ Trade failed: partner no longer has offered items.", ephemeral=True)
+                        return await interaction.followup.send("❌ Trade failed: partner no longer has offered items.")
 
                 # Validate coins availability
                 if your_balance < session["initiator_coins"]:
-                    return await interaction.followup.send("❌ You no longer have enough coins to offer.", ephemeral=True)
+                    return await interaction.followup.send("❌ You no longer have enough coins to offer.")
                 if their_balance < session["partner_coins"]:
-                    return await interaction.followup.send(f"❌ {member.display_name} no longer has enough coins to offer.", ephemeral=True)
+                    return await interaction.followup.send(f"❌ {member.display_name} no longer has enough coins to offer.")
 
                 # Execute atomic-like swap (best effort)
                 try:
@@ -960,7 +1058,7 @@ class Economy(commands.Cog):
                             await session["partner_msg"].edit(content="❌ Trade failed due to an internal error.", embed=None, view=None)
                     except Exception:
                         pass
-                    return await interaction.followup.send("❌ Trade failed due to an internal error. Please try again later.", ephemeral=True)
+                    return await interaction.followup.send("❌ Trade failed due to an internal error. Please try again later.")
 
                 # Success
                 try:
@@ -971,7 +1069,7 @@ class Economy(commands.Cog):
                 except Exception:
                     pass
 
-                await interaction.followup.send("✅ Trade completed successfully.", ephemeral=True)
+                await interaction.followup.send("✅ Trade completed successfully.")
                 try:
                     await ctx.author.send(f"✅ Trade with {member.display_name} completed.")
                 except Exception:

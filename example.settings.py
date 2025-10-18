@@ -54,6 +54,14 @@ DIG_CHANCES: list[int, float] = [90, 25, 10, 5, 0.5]
 BLACK_JACK_SUITS: list[str] = ['♠', '♥', '♦', '♣']
 BLACK_JACK_RANKS: list[str] = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
 
+CHOP_ITEMS: list[str]          = ["apple"]
+CHOP_CHANCES: list[int, float] = [100]
+CHOP_NOT_FALL_TREE_CHANCE_PERCENTAGE: int = 20
+
+VOICE_REWARD_INTERVAL_MINUTES: int = 15
+VOICE_REWARD_AMOUNT: int = 50
+
+
 # Can be a hex but need to be changed to string if you want to use HEX colors
 GAMBLE_WIN_COLOR = Color.green()
 GAMBLE_LOSE_COLOR = Color.red()
