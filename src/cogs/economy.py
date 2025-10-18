@@ -799,8 +799,8 @@ class Economy(commands.Cog):
         session = {
             "initiator": ctx.author.id,
             "partner": member.id,
-            "initiator_items": [],  # list of item ids
-            "partner_items": [],
+            "initiator_items": {},  # dict of item_id: quantity
+            "partner_items": {},
             "initiator_coins": 0,
             "partner_coins": 0,
             "initiator_msg": None,
@@ -811,102 +811,466 @@ class Economy(commands.Cog):
         def create_trade_embed():
             embed = discord.Embed(title="🔁 Trade Panel", color=BALANCE_COLOR)
             # initiator side
-            initiator_items_display = "None" if not session["initiator_items"] else "\n".join(f"{EMOJIS.get(i,'❔')} {i} x{(your_inv.get(i,0))}" for i in session["initiator_items"])
-            partner_items_display = "None" if not session["partner_items"] else "\n".join(f"{EMOJIS.get(i,'❔')} {i} x{(their_inv.get(i,0))}" for i in session["partner_items"])
+            initiator_items_display = "None" if not session["initiator_items"] else "\n".join(f"{EMOJIS.get(item_id,'❔')} {item_id} x{qty}" for item_id, qty in session["initiator_items"].items())
+            partner_items_display = "None" if not session["partner_items"] else "\n".join(f"{EMOJIS.get(item_id,'❔')} {item_id} x{qty}" for item_id, qty in session["partner_items"].items())
             embed.add_field(name=f"{ctx.author.display_name} offers", value=f"Items:\n{initiator_items_display}\nCoins: {session['initiator_coins']}", inline=True)
             embed.add_field(name=f"{member.display_name} offers", value=f"Items:\n{partner_items_display}\nCoins: {session['partner_coins']}", inline=True)
             embed.set_footer(text="Select items and set coins. Initiator must press 'Propose Trade' to request confirmation.")
             return embed
 
-        # Views for each user's DM - they share callbacks via closure over session
+        # Views for each user\'s DM - they share callbacks via closure over session
         class UserTradeView(View):
-            def __init__(self, bot, allowed_user_id: int, options: list[discord.SelectOption], is_initiator: bool):
+            def __init__(self, ctx, member, your_inv, their_inv, session, economy_cog):
                 super().__init__(timeout=600)
-                self.bot = bot
-                self.allowed_user_id = allowed_user_id
-                self.is_initiator = is_initiator
-
-                # item select (allow multi select)
-                if options and not (len(options) == 1 and options[0].value == "__none__"):
-                    self.item_select = Select(placeholder="Select items to offer (multiple allowed)", options=options, min_values=0, max_values=len(options))
-                    self.add_item(self.item_select)
-                    self.item_select.callback = self.on_select_items
-                else:
-                    # disabled select to show no items
-                    self.item_select = None
-
-                # coin setter button
-                self.set_coins_btn = Button(label="Set Coins", style=discord.ButtonStyle.primary)
-                self.cancel_btn = Button(label="Cancel Trade", style=discord.ButtonStyle.red)
-                # Initiator has propose button
-                if is_initiator:
-                    self.propose_btn = Button(label="Propose Trade", style=discord.ButtonStyle.green)
-                    self.add_item(self.propose_btn)
-                    self.propose_btn.callback = self.on_propose
-
-                self.add_item(self.set_coins_btn)
-                self.add_item(self.cancel_btn)
-
-                self.set_coins_btn.callback = self.on_set_coins
-                self.cancel_btn.callback = self.on_cancel
+                self.ctx = ctx
+                self.member = member
+                self.your_inv = your_inv
+                self.their_inv = their_inv
+                self.session = session
+                self.economy_cog = economy_cog
+                self.is_initiator = True # This view is always for the initiator
+                self.add_item(Button(label="Add Your Item", style=discord.ButtonStyle.primary, custom_id="add_your_item"))
+                self.add_item(Button(label="Remove Your Item", style=discord.ButtonStyle.danger, custom_id="remove_your_item"))
+                self.add_item(Button(label="Add Their Item", style=discord.ButtonStyle.primary, custom_id="add_their_item"))
+                self.add_item(Button(label="Remove Their Item", style=discord.ButtonStyle.danger, custom_id="remove_their_item"))
+                self.add_item(Button(label="Set Your Coins", style=discord.ButtonStyle.secondary, custom_id="set_your_coins"))
+                self.add_item(Button(label="Set Their Coins", style=discord.ButtonStyle.secondary, custom_id="set_their_coins"))
+                self.add_item(Button(label="Propose Trade", style=discord.ButtonStyle.success, custom_id="propose_trade"))
+                self.add_item(Button(label="Cancel Trade", style=discord.ButtonStyle.red, custom_id="cancel_trade"))
 
             async def interaction_check(self, interaction: discord.Interaction) -> bool:
-                if interaction.user.id != self.allowed_user_id:
-                    await interaction.response.send_message("You are not allowed to use this control.")
+                if interaction.user.id != self.ctx.author.id:
+                    await interaction.response.send_message("You are not allowed to control this trade session.", ephemeral=True)
                     return False
                 return True
 
-            async def on_select_items(self, interaction: discord.Interaction):
-                # update session with selected items for the interacting user
-                if self.is_initiator:
-                    session["initiator_items"] = list(self.item_select.values)
-                else:
-                    session["partner_items"] = list(self.item_select.values)
-                # edit both DM messages if present
-                embed = create_trade_embed()
-                if session["initiator_msg"]:
-                    try:
-                        await session["initiator_msg"].edit(embed=embed)
-                    except Exception:
-                        pass
-                if session["partner_msg"]:
-                    try:
-                        await session["partner_msg"].edit(embed=embed)
-                    except Exception:
-                        pass
-                await interaction.response.send_message("✅ Selection updated.")
-
-            async def on_set_coins(self, interaction: discord.Interaction):
-                await interaction.response.send_message("Please reply in this DM with the amount of coins you want to offer (integer). Send 0 to offer none. Timeout 60s.")
-                def check(m: discord.Message):
-                    return m.author.id == interaction.user.id and isinstance(m.channel, discord.DMChannel)
+            async def on_timeout(self):
+                self.session["active"] = False
                 try:
-                    msg = await self.bot.wait_for("message", timeout=60.0, check=check)
+                    if self.session["initiator_msg"]:
+                        await self.session["initiator_msg"].edit(content="❌ Trade timed out.", embed=None, view=None)
+                    if self.session["partner_msg"]:
+                        await self.session["partner_msg"].edit(content="❌ Trade timed out.", embed=None, view=None)
+                except Exception:
+                    pass
+
+            async def update_trade_embed(self):
+                embed = discord.Embed(title="🤝 Trade Session", color=BALANCE_COLOR)
+                embed.description = f"**{self.ctx.author.display_name}** is trading with **{self.member.display_name}**"
+
+                your_items_str = "\\n".join([f"{item} x{qty}" for item, qty in self.session["initiator_items"].items()]) if self.session["initiator_items"] else "None"
+                their_items_str = "\\n".join([f"{item} x{qty}" for item, qty in self.session["partner_items"].items()]) if self.session["partner_items"] else "None"
+
+                embed.add_field(name=f"{self.ctx.author.display_name}\'s Offer", value=f"Items:\\n{your_items_str}\\nCoins: {self.session['initiator_coins']}", inline=True)
+                embed.add_field(name=f"{self.member.display_name}\'s Offer", value=f"Items:\\n{their_items_str}\\nCoins: {self.session['partner_coins']}", inline=True)
+                embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
+                return embed
+
+            @discord.ui.button(label="Add Your Item", style=discord.ButtonStyle.primary, custom_id="add_your_item")
+            async def on_add_your_item(self, interaction: discord.Interaction, button: Button):
+                your_current_inv = await self.economy_cog.get_inventory(self.ctx.author.id)
+                if not your_current_inv:
+                    return await interaction.response.send_message("You have no items to add.", ephemeral=True)
+
+                options = []
+                for item, qty in your_current_inv.items():
+                    if qty > 0:
+                        options.append(discord.SelectOption(label=f"{item} (x{qty})", value=item))
+
+                if not options:
+                    return await interaction.response.send_message("You have no items to add.", ephemeral=True)
+
+                select = Select(placeholder="Choose item to add", options=options)
+
+                async def select_callback(inter: discord.Interaction):
+                    chosen_item = select.values[0]
+                    current_qty_in_trade = self.session["initiator_items"].get(chosen_item, 0)
+                    available_qty = your_current_inv.get(chosen_item, 0)
+
+                    if available_qty <= current_qty_in_trade:
+                        return await inter.response.send_message(f"You have already offered all available {chosen_item}.", ephemeral=True)
+
+                    # Ask for amount
+                    await inter.response.send_modal(AmountModal(self.session, "initiator_items", chosen_item, available_qty - current_qty_in_trade, self.session["initiator_msg"], self))
+
+                select.callback = select_callback
+                view = View(timeout=60)
+                view.add_item(select)
+                await interaction.response.send_message("Select an item to add to your offer:", view=view, ephemeral=True)
+
+            @discord.ui.button(label="Remove Your Item", style=discord.ButtonStyle.danger, custom_id="remove_your_item")
+            async def on_remove_your_item(self, interaction: discord.Interaction, button: Button):
+                if not self.session["initiator_items"]:
+                    return await interaction.response.send_message("You have no items in your offer to remove.", ephemeral=True)
+
+                options = []
+                for item, qty in self.session["initiator_items"].items():
+                    options.append(discord.SelectOption(label=f"{item} (x{qty})", value=item))
+
+                select = Select(placeholder="Choose item to remove", options=options)
+
+                async def select_callback(inter: discord.Interaction):
+                    chosen_item = select.values[0]
+                    current_qty_in_trade = self.session["initiator_items"].get(chosen_item, 0)
+
+                    await inter.response.send_modal(AmountModal(self.session, "initiator_items", chosen_item, current_qty_in_trade, self.session["initiator_msg"], self, remove=True))
+
+                select.callback = select_callback
+                view = View(timeout=60)
+                view.add_item(select)
+                await interaction.response.send_message("Select an item to remove from your offer:", view=view, ephemeral=True)
+
+            @discord.ui.button(label="Add Their Item", style=discord.ButtonStyle.primary, custom_id="add_their_item")
+            async def on_add_their_item(self, interaction: discord.Interaction, button: Button):
+                their_current_inv = await self.economy_cog.get_inventory(self.member.id)
+                if not their_current_inv:
+                    return await interaction.response.send_message(f"{self.member.display_name} has no items to request.", ephemeral=True)
+
+                options = []
+                for item, qty in their_current_inv.items():
+                    if qty > 0:
+                        options.append(discord.SelectOption(label=f"{item} (x{qty})", value=item))
+
+                if not options:
+                    return await interaction.response.send_message(f"{self.member.display_name} has no items to request.", ephemeral=True)
+
+                select = Select(placeholder="Choose item to request", options=options)
+
+                async def select_callback(inter: discord.Interaction):
+                    chosen_item = select.values[0]
+                    current_qty_in_trade = self.session["partner_items"].get(chosen_item, 0)
+                    available_qty = their_current_inv.get(chosen_item, 0)
+
+                    if available_qty <= current_qty_in_trade:
+                        return await inter.response.send_message(f"{self.member.display_name} has already offered all available {chosen_item}.", ephemeral=True)
+
+                    await inter.response.send_modal(AmountModal(self.session, "partner_items", chosen_item, available_qty - current_qty_in_trade, self.session["initiator_msg"], self))
+
+                select.callback = select_callback
+                view = View(timeout=60)
+                view.add_item(select)
+                await interaction.response.send_message(f"Select an item to request from {self.member.display_name}:", view=view, ephemeral=True)
+
+            @discord.ui.button(label="Remove Their Item", style=discord.ButtonStyle.danger, custom_id="remove_their_item")
+            async def on_remove_their_item(self, interaction: discord.Interaction, button: Button):
+                if not self.session["partner_items"]:
+                    return await interaction.response.send_message(f"{self.member.display_name} has no items in their offer to remove.", ephemeral=True)
+
+                options = []
+                for item, qty in self.session["partner_items"].items():
+                    options.append(discord.SelectOption(label=f"{item} (x{qty})", value=item))
+
+                select = Select(placeholder="Choose item to remove", options=options)
+
+                async def select_callback(inter: discord.Interaction):
+                    chosen_item = select.values[0]
+                    current_qty_in_trade = self.session["partner_items"].get(chosen_item, 0)
+
+                    await inter.response.send_modal(AmountModal(self.session, "partner_items", chosen_item, current_qty_in_trade, self.session["initiator_msg"], self, remove=True))
+
+                select.callback = select_callback
+                view = View(timeout=60)
+                view.add_item(select)
+                await interaction.response.send_message(f"Select an item to remove from {self.member.display_name}\'s offer:", view=view, ephemeral=True)
+
+            @discord.ui.button(label="Set Your Coins", style=discord.ButtonStyle.secondary, custom_id="set_your_coins")
+            async def on_set_your_coins(self, interaction: discord.Interaction, button: Button):
+                your_balance = await self.economy_cog.get_balance(self.ctx.author.id)
+                await interaction.response.send_modal(CoinModal(self.session, "initiator_coins", your_balance, self.session["initiator_msg"], self))
+
+            @discord.ui.button(label="Set Their Coins", style=discord.ButtonStyle.secondary, custom_id="set_their_coins")
+            async def on_set_their_coins(self, interaction: discord.Interaction, button: Button):
+                their_balance = await self.economy_cog.get_balance(self.member.id)
+                await interaction.response.send_modal(CoinModal(self.session, "partner_coins", their_balance, self.session["initiator_msg"], self))
+
+            @discord.ui.button(label="Propose Trade", style=discord.ButtonStyle.success, custom_id="propose_trade")
+            async def on_propose(self, interaction: discord.Interaction, button: Button):
+                # Only initiator will have this; sends confirmation to partner
+                if not self.is_initiator:
+                    return await interaction.response.send_message("Only the trade initiator can propose the trade.", ephemeral=True)
+
+                # Basic validation: ensure something offered (items or coins)
+                if not self.session["initiator_items"] and self.session["initiator_coins"] == 0:
+                    return await interaction.response.send_message("You must offer at least items or coins to propose.", ephemeral=True)
+
+                # Check if initiator has enough items/coins
+                initiator_current_inv = await self.economy_cog.get_inventory(self.ctx.author.id)
+                for item, qty in self.session["initiator_items"].items():
+                    if initiator_current_inv.get(item, 0) < qty:
+                        return await interaction.response.send_message(f"You don't have enough {item} to offer.", ephemeral=True)
+                if await self.economy_cog.get_balance(self.ctx.author.id) < self.session["initiator_coins"]:
+                    return await interaction.response.send_message("You don't have enough coins to offer.", ephemeral=True)
+
+                # Check if partner has enough items/coins for what is requested from them
+                partner_current_inv = await self.economy_cog.get_inventory(self.member.id)
+                for item, qty in self.session["partner_items"].items():
+                    if partner_current_inv.get(item, 0) < qty:
+                        return await interaction.response.send_message(f"{self.member.display_name} doesn't have enough {item} to give.", ephemeral=True)
+                if await self.economy_cog.get_balance(self.member.id) < self.session["partner_coins"]:
+                    return await interaction.response.send_message(f"{self.member.display_name} doesn't have enough coins to give.", ephemeral=True)
+
+                # Send confirmation to partner with accept/reject buttons
+                confirm_embed = discord.Embed(title="🔔 Trade Confirmation Request", color=BALANCE_COLOR)
+                initiator_offers_text = '\n'.join([f"{EMOJIS.get(item, '❔')} {item} x{qty}" for item, qty in self.session["initiator_items"].items()]) if self.session["initiator_items"] else 'None'
+                partner_requests_text = '\n'.join([f"{EMOJIS.get(item, '❔')} {item} x{qty}" for item, qty in self.session["partner_items"].items()]) if self.session["partner_items"] else 'None'
+                confirm_embed.description = (
+                    f"{self.ctx.author.display_name} proposes a trade:\n\n"\
+                    f"**They offer:**\n"\
+                    f"{initiator_offers_text}\nCoins: {self.session['initiator_coins']}\n\n"
+                    f"**They request from you:**\n"\
+                    f"{partner_requests_text}\nCoins: {self.session['partner_coins']}\n\n"
+                    "Click Accept to accept the trade or Reject to decline. (60s)"
+                )
+
+                class ConfirmView(View):
+                    def __init__(self):
+                        super().__init__(timeout=60)
+                        self.result = None
+                        self.accept = Button(label="Accept", style=discord.ButtonStyle.green)
+                        self.reject = Button(label="Reject", style=discord.ButtonStyle.red)
+                        self.add_item(self.accept)
+                        self.add_item(self.reject)
+                        self.accept.callback = self.accept_cb
+                        self.reject.callback = self.reject_cb
+
+                    async def interaction_check(self, inter: discord.Interaction) -> bool:
+                        if inter.user.id != self.member.id:
+                            await inter.response.send_message("You are not allowed to respond to this confirmation.")
+                            return False
+                        return True
+
+                    async def accept_cb(self, inter: discord.Interaction):
+                        self.result = True
+                        await inter.response.edit_message(content="✅ You accepted the trade.", embed=None, view=None)
+                        self.stop()
+
+                    async def reject_cb(self, inter: discord.Interaction):
+                        self.result = False
+                        await inter.response.edit_message(content="❌ You rejected the trade.", embed=None, view=None)
+                        self.stop()
+
+                try:
+                    confirm_view = ConfirmView()
+                    confirm_msg = await self.member.send(embed=confirm_embed, view=confirm_view)
+                except discord.Forbidden:
+                    return await interaction.response.send_message(f"❌ Could not DM {self.member.display_name} to request confirmation.")
+
+                # wait for partner response
+                try:
+                    await confirm_view.wait()
+                    res = confirm_view.result
+                except Exception:
+                    res = None
+
+                if res is not True:
+                    # partner rejected or timed out
+                    # notify both panels
                     try:
-                        amount = int(msg.content.strip())
-                        if amount < 0:
-                            raise ValueError()
+                        if self.session["initiator_msg"]:
+                            await self.session["initiator_msg"].edit(content="❌ Trade declined or timed out.", embed=None, view=None)
+                        if self.session["partner_msg"]:
+                            await self.session["partner_msg"].edit(content="❌ Trade declined or timed out.", embed=None, view=None)
                     except Exception:
-                        return await interaction.followup.send("❌ Invalid amount. Please enter a non-negative integer.")
-                    if self.is_initiator:
-                        session["initiator_coins"] = amount
+                        pass
+                    return await interaction.followup.send("❌ Trade was declined or timed out.")
+
+                # Partner accepted — finalize trade after re-checks
+                # Re-fetch inventories and balances
+                fresh_your_inv = await self.economy_cog.get_inventory(self.ctx.author.id) or {}
+                fresh_their_inv = await self.economy_cog.get_inventory(self.member.id) or {}
+                your_balance = await self.economy_cog.get_balance(self.ctx.author.id)
+                their_balance = await self.economy_cog.get_balance(self.member.id)
+
+                # Validate items availability
+                for it, qty in self.session["initiator_items"].items():
+                    if fresh_your_inv.get(it, 0) < qty:
+                        try:
+                            await self.member.send("❌ Trade failed: initiator no longer has offered items.")
+                        except Exception:
+                            pass
+                        try:
+                            if self.session["initiator_msg"]:
+                                await self.session["initiator_msg"].edit(content="❌ Trade failed: items changed.", embed=None, view=None)
+                        except Exception:
+                            pass
+                        return await interaction.followup.send("❌ Trade failed: initiator no longer has offered items.")
+                for it, qty in self.session["partner_items"].items():
+                    if fresh_their_inv.get(it, 0) < qty:
+                        try:
+                            await self.ctx.author.send("❌ Trade failed: partner no longer has offered items.")
+                        except Exception:
+                            pass
+                        try:
+                            if self.session["partner_msg"]:
+                                await self.session["partner_msg"].edit(content="❌ Trade failed: items changed.", embed=None, view=None)
+                        except Exception:
+                            pass
+                        return await interaction.followup.send("❌ Trade failed: partner no longer has offered items.")
+
+                # Validate coins availability
+                if your_balance < self.session["initiator_coins"]:
+                    return await interaction.followup.send("❌ You no longer have enough coins to offer.")
+                if their_balance < self.session["partner_coins"]:
+                    return await interaction.followup.send(f"❌ {self.member.display_name} no longer has enough coins to offer.")
+
+                # Execute atomic-like swap (best effort)
+                try:
+                    # transfer items
+                    for it, qty in self.session["initiator_items"].items():
+                        await self.economy_cog.remove_item(self.ctx.author.id, it, qty)
+                        await self.economy_cog.add_item(self.member.id, it, qty)
+                    for it, qty in self.session["partner_items"].items():
+                        await self.economy_cog.remove_item(self.member.id, it, qty)
+                        await self.economy_cog.add_item(self.ctx.author.id, it, qty)
+                    # transfer coins
+                    if self.session["initiator_coins"] > 0:
+                        await self.economy_cog.update_balance(self.ctx.author.id, -self.session["initiator_coins"])
+                        await self.economy_cog.update_balance(self.member.id, self.session["initiator_coins"])
+                    if self.session["partner_coins"] > 0:
+                        await self.economy_cog.update_balance(self.member.id, -self.session["partner_coins"])
+                        await self.economy_cog.update_balance(self.ctx.author.id, self.session["partner_coins"])
+
+                    # Notify success
+                    success_embed = discord.Embed(title="✅ Trade Successful!", color=BALANCE_COLOR)
+                    success_embed.description = f"**{self.ctx.author.display_name}** and **{self.member.display_name}** have successfully traded!"
+                    success_embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
+
+                    if self.session["initiator_msg"]:
+                        await self.session["initiator_msg"].edit(embed=success_embed, view=None)
+                    if self.session["partner_msg"]:
+                        await self.session["partner_msg"].edit(embed=success_embed, view=None)
+
+                    await interaction.followup.send("✅ Trade completed successfully!")
+                    self.stop()
+
+                except Exception as e:
+                    logger.exception(f"Trade execution failed: {e}")
+                    await interaction.followup.send("❌ An error occurred during trade execution. Trade cancelled.")
+                    if self.session["initiator_msg"]:
+                        await self.session["initiator_msg"].edit(content="❌ Trade failed due to an error.", embed=None, view=None)
+                    if self.session["partner_msg"]:
+                        await self.session["partner_msg"].edit(content="❌ Trade failed due to an error.", embed=None, view=None)
+                    self.stop()
+
+            @discord.ui.button(label="Cancel Trade", style=discord.ButtonStyle.red, custom_id="cancel_trade")
+            async def on_cancel(self, interaction: discord.Interaction, button: Button):
+                self.session["active"] = False
+                # notify both
+                try:
+                    if self.session["initiator_msg"]:
+                        await self.session["initiator_msg"].edit(content="❌ Trade cancelled.", embed=None, view=None)
+                    if self.session["partner_msg"]:
+                        await self.session["partner_msg"].edit(content="❌ Trade cancelled.", embed=None, view=None)
+                except Exception:
+                    pass
+                await interaction.response.send_message("❌ Trade cancelled.")
+                self.stop()
+
+        # --- Modals for item/coin input ---\
+        class AmountModal(discord.ui.Modal, title="Enter Amount"):
+            def __init__(self, session, item_type_key, item_id, max_qty, message_to_edit, parent_view, remove=False):
+                super().__init__()
+                self.session = session
+                self.item_type_key = item_type_key
+                self.item_id = item_id
+                self.max_qty = max_qty
+                self.message_to_edit = message_to_edit
+                self.parent_view = parent_view
+                self.remove = remove
+                self.amount_input = discord.ui.TextInput(
+                    label=f"Amount of {item_id} (Max: {max_qty})",
+                    placeholder="Enter amount",
+                    min_length=1,
+                    max_length=5,
+                )
+                self.add_item(self.amount_input)
+
+            async def on_submit(self, interaction: discord.Interaction):
+                try:
+                    amount = int(self.amount_input.value)
+                    if amount <= 0:
+                        return await interaction.response.send_message("Amount must be positive.", ephemeral=True)
+                    if amount > self.max_qty:
+                        return await interaction.response.send_message(f"You can only {'remove' if self.remove else 'add'} up to {self.max_qty} of {self.item_id}.", ephemeral=True)
+
+                    current_items = self.session.get(self.item_type_key, {})
+                    if self.remove:
+                        current_items[self.item_id] = current_items.get(self.item_id, 0) - amount
+                        if current_items[self.item_id] <= 0:
+                            del current_items[self.item_id]
                     else:
-                        session["partner_coins"] = amount
-                    # update both panels
-                    embed = create_trade_embed()
-                    if session["initiator_msg"]:
-                        try:
-                            await session["initiator_msg"].edit(embed=embed)
-                        except Exception:
-                            pass
-                    if session["partner_msg"]:
-                        try:
-                            await session["partner_msg"].edit(embed=embed)
-                        except Exception:
-                            pass
-                    await interaction.followup.send(f"✅ Coins set to {amount}.")
-                except asyncio.TimeoutError:
-                    await interaction.followup.send("⏰ Timed out; no coins were set.")
+                        current_items[self.item_id] = current_items.get(self.item_id, 0) + amount
+                    self.session[self.item_type_key] = current_items
+
+                    await interaction.response.send_message(f"Successfully {'removed' if self.remove else 'added'} {amount} x {self.item_id}.", ephemeral=True)
+                    if self.message_to_edit: 
+                        await self.message_to_edit.edit(embed=await self.parent_view.update_trade_embed(), view=self.parent_view)
+
+                except ValueError:
+                    await interaction.response.send_message("Invalid amount. Please enter a number.", ephemeral=True)
+                except Exception as e:
+                    logger.exception(f"Error in AmountModal on_submit: {e}")
+                    await interaction.response.send_message("An unexpected error occurred.", ephemeral=True)
+
+        class CoinModal(discord.ui.Modal, title="Set Coin Amount"):
+            def __init__(self, session, coin_type_key, max_coins, message_to_edit, parent_view):
+                super().__init__()
+                self.session = session
+                self.coin_type_key = coin_type_key
+                self.max_coins = max_coins
+                self.message_to_edit = message_to_edit
+                self.parent_view = parent_view
+                self.amount_input = discord.ui.TextInput(
+                    label=f"Amount of Coins (Max: {max_coins})",
+                    placeholder="Enter amount",
+                    min_length=1,
+                    max_length=10,
+                )
+                self.add_item(self.amount_input)
+
+            async def on_submit(self, interaction: discord.Interaction):
+                try:
+                    amount = int(self.amount_input.value)
+                    if amount < 0:
+                        return await interaction.response.send_message("Amount cannot be negative.", ephemeral=True)
+                    if amount > self.max_coins:
+                        return await interaction.response.send_message(f"You only have {self.max_coins} coins.", ephemeral=True)
+
+                    self.session[self.coin_type_key] = amount
+
+                    await interaction.response.send_message(f"Successfully set coins to {amount}.", ephemeral=True)
+                    if self.message_to_edit:
+                        await self.message_to_edit.edit(embed=await self.parent_view.update_trade_embed(), view=self.parent_view)
+
+                except ValueError:
+                    await interaction.response.send_message("Invalid amount. Please enter a number.", ephemeral=True)
+                except Exception as e:
+                    logger.exception(f"Error in CoinModal on_submit: {e}")
+                    await interaction.response.send_message("An unexpected error occurred.", ephemeral=True)
+
+        # After initial setup, send the trade panel to the initiator
+        trade_view = UserTradeView(ctx, member, your_inv, their_inv, session, self)
+        initiator_trade_msg = await dm_author.send(embed=await trade_view.update_trade_embed(), view=trade_view)
+        session["initiator_msg"] = initiator_trade_msg
+
+        # Send a read-only view to the partner
+        partner_trade_msg = await dm_partner.send(embed=await trade_view.update_trade_embed())
+        session["partner_msg"] = partner_trade_msg
+
+        # Wait for the trade to conclude
+        await trade_view.wait()
+
+        # Clean up session
+        del self.active_trades[(ctx.author.id, member.id)]
+        del self.active_trades[(member.id, ctx.author.id)]
+        pass
+        if session["partner_msg"]:
+            try:
+                await session["partner_msg"].edit(embed=embed)
+            except asyncio.TimeoutError:
+                await interaction.followup.send("⏰ Timed out; no coins were set.")
+            except Exception:
+                await interaction.followup.send(f"✅ Coins set to {amount}.")
 
             async def on_cancel(self, interaction: discord.Interaction):
                 session["active"] = False

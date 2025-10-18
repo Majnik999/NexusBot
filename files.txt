@@ -1,7 +1,6 @@
 main.py
 requirements.txt
 src/cogs/bot.py
-src/cogs/bashcrawl.py.disabled
 src/cogs/bot.py
 src/cogs/economy.py
 src/cogs/fun.py
