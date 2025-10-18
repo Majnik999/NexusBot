@@ -828,6 +828,7 @@ class Economy(commands.Cog):
                 self.their_inv = their_inv
                 self.session = session
                 self.economy_cog = economy_cog
+                logger.debug(f"UserTradeView __init__: economy_cog type={type(self.economy_cog)}, value={self.economy_cog}")
                 self.is_initiator = True # This view is always for the initiator
                 self.add_item(Button(label="Add Your Item", style=discord.ButtonStyle.primary, custom_id="add_your_item"))
                 self.add_item(Button(label="Remove Your Item", style=discord.ButtonStyle.danger, custom_id="remove_your_item"))
@@ -985,6 +986,7 @@ class Economy(commands.Cog):
 
             @discord.ui.button(label="Propose Trade", style=discord.ButtonStyle.success, custom_id="propose_trade")
             async def on_propose(self, interaction: discord.Interaction, button: Button):
+                logger.debug(f"UserTradeView on_propose: self.economy_cog type={type(self.economy_cog)}, value={self.economy_cog}")
                 # Only initiator will have this; sends confirmation to partner
                 if not self.is_initiator:
                     return await interaction.response.send_message("Only the trade initiator can propose the trade.", ephemeral=True)
@@ -1445,12 +1447,11 @@ class Economy(commands.Cog):
                 session["active"] = False
                 self.stop()
         # send DMs with views and store messages for cross-editing
-        initiator_view = UserTradeView(self.bot, ctx.author.id, author_options, is_initiator=True)
-        partner_view = UserTradeView(self.bot, member.id, partner_options, is_initiator=False)
+
 
         try:
-            init_msg = await ctx.author.send(embed=create_trade_embed(), view=initiator_view)
-            part_msg = await member.send(embed=create_trade_embed(), view=partner_view)
+            init_msg = await ctx.author.send(embed=create_trade_embed(), view=trade_view)
+            part_msg = await member.send(embed=create_trade_embed(), view=trade_view)
             session["initiator_msg"] = init_msg
             session["partner_msg"] = part_msg
             logger.info(f"trade panels sent initiator={ctx.author.id} partner={member.id}")
@@ -1460,7 +1461,7 @@ class Economy(commands.Cog):
 
         # Wait until either view times out or session becomes inactive
         try:
-            await asyncio.wait_for(asyncio.gather(initiator_view.wait(), partner_view.wait()), timeout=600)
+            await asyncio.wait_for(trade_view.wait(), timeout=600)
         except asyncio.TimeoutError:
             if session["active"]:
                 # timeout - cancel trade panels
