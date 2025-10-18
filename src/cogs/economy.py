@@ -16,7 +16,10 @@ DB_PATH = "src/databases/economy.db"
 class Economy(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
+        self.voice_sessions = {}
+        self.voice_reward_interval_minutes = VOICE_REWARD_INTERVAL_MINUTES
+        self.voice_reward_amount = VOICE_REWARD_AMOUNT
+        
     async def initialize_database(self):
         logger.info("Initializing database")
         async with aiosqlite.connect(DB_PATH) as db:
@@ -53,10 +56,6 @@ class Economy(commands.Cog):
             
             await db.commit()
         logger.debug("Database schema ensured")
-
-    self.voice_sessions = {}
-    self.voice_reward_interval_minutes = VOICE_REWARD_INTERVAL_MINUTES
-    self.voice_reward_amount = VOICE_REWARD_AMOUNT
 
     # ================= INITIALIZATION =================
     async def cog_load(self):
