@@ -387,8 +387,6 @@ class Music(commands.Cog):
             try: await vc.panel_message.delete()
             except: pass
             vc.panel_message = None
-        
-        await reply("Playback stopped and I left the channel!")
         # 🎯 UPDATED LOGGING HERE
 
     async def skip_logic(self, interaction_or_ctx):
@@ -706,15 +704,6 @@ class Music(commands.Cog):
                 except Exception:
                     # if disconnect fails, log minimally
                     logger.warning(f"[{guild_id}] Disconnect attempt failed (ignored).")
-
-                # Optionally notify the guild via the stored text channel
-                txt = getattr(vc, "text_channel", None)
-                if txt:
-                    try:
-                        await txt.send("No users remain in the voice channel — playback stopped and I left the channel.")
-                    except Exception:
-                        # don't expose details to users
-                        logger.debug(f"[{guild_id}] Failed to send empty-channel notification (ignored).")
 
             except Exception:
                 # Catch-all to ensure this listener never raises
