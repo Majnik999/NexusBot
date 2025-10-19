@@ -789,7 +789,8 @@ class Music(commands.Cog):
                 await interaction.followup.send(embed=embed)
             else:
                 await vc.play(track)
-                await interaction.followup.send(f"Started playing: [{track.title}]({track.uri})")
+            
+            await self._update_bot_nickname(interaction.guild, track)
 
             # Ensure panel message exists
             if not vc.panel_message:
