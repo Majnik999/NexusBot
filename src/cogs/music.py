@@ -741,8 +741,9 @@ class Music(commands.Cog):
         except Exception as e:
             logger.warning(f"[{guild.id}] Failed to update nickname: {e}")
 
-    @app_commands.context_menu(name="Play/Queue Song Link")
-    async def play_track(self, interaction: discord.Interaction, message: discord.Message):
+    # --- Context-menu handler ---
+    @app_commands.context_menu(name="Play Track")
+    async def _context_menu_play_track(self, interaction: discord.Interaction, message: discord.Message):
         """Finds the first valid audio URL in the message and plays or queues it."""
         # Look for any HTTP(S) link in the message content
         url_match = re.search(r'https?://\S+', message.content)
@@ -800,11 +801,12 @@ class Music(commands.Cog):
         except Exception as e:
             logger.warning(f"[{interaction.guild.id}] Context-menu play failed: {e}")
             await interaction.followup.send("An error occurred while trying to play that link.", ephemeral=True)
-        
 
 async def setup(bot):
     music_cog = Music(bot)
     await bot.add_cog(music_cog)
+    
+    bot.tree.add_command(music_cog._context_menu_play_track)
     
     bot.loop.create_task(music_cog.connect_to_nodes())
     
