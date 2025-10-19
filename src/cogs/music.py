@@ -741,16 +741,8 @@ class Music(commands.Cog):
         except Exception as e:
             logger.warning(f"[{guild.id}] Failed to update nickname: {e}")
 
-    # --- Context-menu handler ---
-    @app_commands.context_menu(name="Play Track")
-    async def _context_menu_play_track(self, interaction: discord.Interaction, message: discord.Message):
-        """Finds the first valid audio URL in the message and plays or queues it."""
-        # Look for any HTTP(S) link in the message content
-        url_match = re.search(r'https?://\S+', message.content)
-        if not url_match:
-            return await interaction.response.send_message("No valid URL found in that message.", ephemeral=True)
-
-        url = url_match.group(0)
+    # Helper method for context menu
+    async def _play_from_url(self, interaction: discord.Interaction, url: str):
         query = url.strip()
 
         # Defer the interaction to give us time to process
@@ -806,7 +798,19 @@ async def setup(bot):
     music_cog = Music(bot)
     await bot.add_cog(music_cog)
     
-    bot.tree.add_command(music_cog._context_menu_play_track)
+    # Create and register the context menu
+    @app_commands.context_menu(name="Play Track")
+    async def play_track_context_menu(interaction: discord.Interaction, message: discord.Message):
+        """Finds the first valid audio URL in the message and plays or queues it."""
+        # Look for any HTTP(S) link in the message content
+        url_match = re.search(r'https?://\S+', message.content)
+        if not url_match:
+            return await interaction.response.send_message("No valid URL found in that message.", ephemeral=True)
+        
+        url = url_match.group(0)
+        await music_cog._play_from_url(interaction, url)
+    
+    bot.tree.add_command(play_track_context_menu)
     
     bot.loop.create_task(music_cog.connect_to_nodes())
     
