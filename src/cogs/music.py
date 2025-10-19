@@ -6,6 +6,7 @@ from main import logger
 from settings import LAVALINK_URI, LAVALINK_PASSWORD, PREFIX
 import asyncio
 import time
+import re
 import urllib.parse as _urlparse
 
 # --- 1. Custom Player Class ---
@@ -417,6 +418,7 @@ class Music(commands.Cog):
         )
         
         embed.add_field(name=PREFIX+"music play <query>", value="Play a song or add to queue", inline=False)
+        embed.add_field(name=PREFIX+"music playnow <query>", value="Play the song immediately, bypassing the queue", inline=False)
         embed.add_field(name=PREFIX+"music skip", value="Skip the current song", inline=False)
         embed.add_field(name=PREFIX+"music pause", value="Pause the current song", inline=False)
         embed.add_field(name=PREFIX+"music resume", value="Resume the paused song", inline=False)
@@ -480,6 +482,43 @@ class Music(commands.Cog):
                 if vc.panel_message:
                     await self.update_panel_message(vc) 
                 # 🎯 UPDATED LOGGING HERE
+
+    @music.command(name="playnow", aliases=['pn'])
+    async def playnow_cmd(self, ctx: commands.Context, *, search: str):
+        """Plays the track immediately, bypassing the queue."""
+        vc: CustomPlayer = ctx.voice_client
+        if not vc:
+            if not ctx.author.voice: 
+                return await ctx.send("Join a VC first!")
+            try:
+                vc = await ctx.author.voice.channel.connect(cls=CustomPlayer)
+                vc.text_channel = ctx.channel
+            except Exception as e:
+                logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to connect to VC for playnow: {e}")
+                return await ctx.send("Failed to join your voice channel.")
+
+        try:
+            tracks = await wavelink.Playable.search(search)
+            if not tracks:
+                return await ctx.send("No results found.")
+            track = tracks[0]
+            track.requester = ctx.author
+        except Exception as e:
+            logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Playnow search failed: {e}")
+            return await ctx.send("Error searching for that track.")
+
+        # Clear queue and stop current track if playing
+        await self._clear_queue(vc)
+        if vc.playing or vc.paused:
+            await vc.stop()
+
+        await vc.play(track)
+
+        if not vc.panel_message:
+            vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
+        else:
+            await self.update_panel_message(vc)
+        
 
     @music.command(name="skip", aliases=['s'])
     async def skip_cmd(self, ctx: commands.Context):
@@ -700,6 +739,67 @@ class Music(commands.Cog):
             await guild.me.edit(nick=new_nick)
         except Exception as e:
             logger.warning(f"[{guild.id}] Failed to update nickname: {e}")
+
+    @commands.context_menu(name="Play/Queue Song Link")
+    async def play_track(self, interaction: discord.Interaction, message: discord.Message):
+        """Finds the first valid audio URL in the message and plays or queues it."""
+        # Look for any HTTP(S) link in the message content
+        url_match = re.search(r'https?://\S+', message.content)
+        if not url_match:
+            return await interaction.response.send_message("No valid URL found in that message.", ephemeral=True)
+
+        url = url_match.group(0)
+        query = url.strip()
+
+        # Defer the interaction to give us time to process
+        await interaction.response.defer(thinking=True)
+
+        # Obtain or create the player exactly like the play command does
+        vc: CustomPlayer = interaction.guild.voice_client
+        if not vc:
+            if not interaction.user.voice:
+                return await interaction.followup.send("Join a voice channel first!", ephemeral=True)
+            try:
+                vc = await interaction.user.voice.channel.connect(cls=CustomPlayer)
+                vc.text_channel = interaction.channel
+            except Exception as e:
+                logger.warning(f"[{interaction.guild.id}] Failed to connect to VC via context menu: {e}")
+                return await interaction.followup.send("Could not join your voice channel.", ephemeral=True)
+            # Set default volume quietly
+            try:
+                await vc.set_volume(50)
+            except Exception as e:
+                logger.warning(f"[{interaction.guild.id}] Failed to set initial volume via context menu: {e}")
+
+        # Attempt to play/queue the URL
+        try:
+            tracks = await wavelink.Playable.search(query)
+            if not tracks:
+                return await interaction.followup.send("Could not find any playable audio for that link.", ephemeral=True)
+
+            track = tracks[0]
+            track.requester = interaction.user
+
+            if vc.playing or not vc.queue.is_empty:
+                vc.queue.put(track)
+                embed = discord.Embed(
+                    title="Added to Queue",
+                    description=f"[{track.title}]({track.uri})",
+                    color=discord.Color.green()
+                )
+                await interaction.followup.send(embed=embed)
+            else:
+                await vc.play(track)
+                await interaction.followup.send(embed=await self.build_embed(vc))
+
+            # Ensure panel message exists
+            if not vc.panel_message:
+                vc.panel_message = await interaction.followup.send(embed=await self.build_embed(vc), view=self.panel_view)
+
+        except Exception as e:
+            logger.warning(f"[{interaction.guild.id}] Context-menu play failed: {e}")
+            await interaction.followup.send("An error occurred while trying to play that link.", ephemeral=True)
+        
 
 async def setup(bot):
     music_cog = Music(bot)
