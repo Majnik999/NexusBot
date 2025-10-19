@@ -784,7 +784,6 @@ class Music(commands.Cog):
                 await interaction.followup.send(embed=embed)
             else:
                 await vc.play(track)
-                await interaction.followup.send(embed=await self.build_embed(vc))
 
             # Ensure panel message exists
             if not vc.panel_message:
@@ -799,7 +798,7 @@ async def setup(bot):
     await bot.add_cog(music_cog)
     
     # Create and register the context menu
-    @app_commands.context_menu(name="Play Track")
+    @app_commands.context_menu(name="Play/Queue Song Link")
     async def play_track_context_menu(interaction: discord.Interaction, message: discord.Message):
         """Finds the first valid audio URL in the message and plays or queues it."""
         # Look for any HTTP(S) link in the message content
