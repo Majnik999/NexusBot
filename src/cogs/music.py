@@ -469,7 +469,12 @@ class Music(commands.Cog):
 
         if vc.playing or vc.paused: 
             vc.queue.put(track)
-            await ctx.send(f"**Queued:** `{track.title}` - Position **{len(vc.queue)}**")
+            embed = discord.Embed(
+                    title="Added to Queue",
+                    description=f"[{track.title}]({track.uri})",
+                    color=discord.Color.green()
+            )
+            await ctx.send(embed=embed)
             logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Queued: {track.title}")
         else:
             try:
@@ -784,6 +789,7 @@ class Music(commands.Cog):
                 await interaction.followup.send(embed=embed)
             else:
                 await vc.play(track)
+                await interaction.followup.send(f"Started playing: [{track.title}]({track.uri})")
 
             # Ensure panel message exists
             if not vc.panel_message:
