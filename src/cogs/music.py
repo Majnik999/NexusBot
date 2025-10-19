@@ -811,6 +811,7 @@ async def setup(bot):
         await music_cog._play_from_url(interaction, url)
     
     bot.tree.add_command(play_track_context_menu)
+    await bot.tree.sync()
     
     bot.loop.create_task(music_cog.connect_to_nodes())
     
