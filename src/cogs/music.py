@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
 import wavelink
 import typing
@@ -740,7 +741,7 @@ class Music(commands.Cog):
         except Exception as e:
             logger.warning(f"[{guild.id}] Failed to update nickname: {e}")
 
-    @commands.context_menu(name="Play/Queue Song Link")
+    @app_commands.context_menu(name="Play/Queue Song Link")
     async def play_track(self, interaction: discord.Interaction, message: discord.Message):
         """Finds the first valid audio URL in the message and plays or queues it."""
         # Look for any HTTP(S) link in the message content
