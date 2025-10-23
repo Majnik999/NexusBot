@@ -10,3 +10,4 @@ spotipy
 wavelink
 beautifulsoup4
 aiohttp
+qrcode[pil]
