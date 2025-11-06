@@ -11,3 +11,6 @@ wavelink
 beautifulsoup4
 aiohttp
 qrcode[pil]
+google-generativeai
+gTTS
+imageio-ffmpeg
