@@ -543,7 +543,7 @@ class AIVoice(commands.Cog):
         genai.configure(api_key=api_key)
         # Lightweight, fast model for chat
         try:
-            self.model = genai.GenerativeModel("gemini-1.5-flash")
+            self.model = genai.GenerativeModel("gemini-2.0-flash")
         except Exception as e:
             logger.error(f"Failed to initialize Gemini model: {e}")
             self.model = None
