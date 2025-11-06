@@ -17,3 +17,4 @@ src/config/versions.py
 src/font/arial.ttf
 src/cogs/music.py
 src/cogs/steam.py
+src/cogs/ai-voice.py
