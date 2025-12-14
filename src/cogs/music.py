@@ -430,7 +430,6 @@ class Music(commands.Cog):
     async def music(self, ctx: commands.Context):
         embed = discord.Embed(title="Music Commands", description=f"Use `{PREFIX}music play <song>` to start the music!")
         embed.add_field(name=PREFIX+"music play <query>", value="Play a song or add to queue", inline=False)
-        embed.add_field(name=PREFIX+"music playnow <query>", value="Play the song immediately, bypassing the queue", inline=False)
         embed.add_field(name=PREFIX+"music skip", value="Skip the current song", inline=False)
         embed.add_field(name=PREFIX+"music repeat", value="Toggle repeat for the current song", inline=False)
         embed.add_field(name=PREFIX+"music pause", value="Pause the current song", inline=False)
@@ -522,101 +521,6 @@ class Music(commands.Cog):
                     if vc.panel_message:
                         await self.update_panel_message(vc)
 
-    @music.command(name="playnow", aliases=['pn'])
-    async def playnow_cmd(self, ctx: commands.Context, *, search: str):
-        vc: CustomPlayer = ctx.voice_client
-        if not vc:
-            if not ctx.author.voice:
-                return await ctx.send("Join a VC first!")
-            try:
-                vc = await ctx.author.voice.channel.connect(cls=CustomPlayer, self_deaf=True)
-                vc.text_channel = ctx.channel
-                try:
-                    await self._ensure_deaf(vc)
-                except Exception:
-                    pass
-            except Exception as e:
-                logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to connect to VC for playnow: {e}")
-                return await ctx.send("Failed to join your voice channel.")
-            try:
-                await vc.set_volume(50)
-            except Exception as e:
-                logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to set initial volume for playnow: {e}")
-        try:
-            tracks = await wavelink.Playable.search(search)
-            if not tracks:
-                return await ctx.send("No results found.")
-        except Exception as e:
-            logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Playnow search failed: {e}")
-            return await ctx.send("Error searching for that track.")
-
-        # Prepend requested track(s) so they play immediately, preserving the existing queue order.
-        def _prepend_tracks_to_queue(vc, new_tracks: list):
-            try:
-                # Drain existing queue into a temporary list
-                existing = []
-                try:
-                    while not vc.queue.is_empty:
-                        existing.append(vc.queue.get())
-                except Exception:
-                    # If queue access fails for any reason, fall back to leaving it unchanged
-                    existing = []
-                # Put new tracks first
-                for t in new_tracks:
-                    vc.queue.put(t)
-                # Re-add the old items after
-                for t in existing:
-                    vc.queue.put(t)
-            except Exception:
-                # Best-effort; if unable to reorder, append to the end instead
-                for t in new_tracks:
-                    try:
-                        vc.queue.put(t)
-                    except Exception:
-                        pass
-
-        # If a playlist was returned, prepend all tracks and start playback from the first new item
-        if isinstance(tracks, wavelink.Playlist):
-            new_tracks = []
-            for track in tracks.tracks:
-                track.requester = ctx.author
-                new_tracks.append(track)
-            _prepend_tracks_to_queue(vc, new_tracks)
-            try:
-                if vc.playing or vc.paused:
-                    await vc.stop()
-                # Play the first of the newly prepended tracks
-                await vc.play(vc.queue.get())
-            except Exception as e:
-                logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to play playlist for playnow: {e}")
-                return await ctx.send("Failed to play the playlist.")
-            else:
-                embed = discord.Embed(title="Playlist Added to Queue", description=f"Added {len(new_tracks)} tracks from {tracks.name}", color=discord.Color.green())
-                await ctx.send(embed=embed)
-                logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Started playing playlist via playnow: {tracks.name}")
-                if not vc.panel_message:
-                    vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
-                else:
-                    await self.update_panel_message(vc)
-            return
-
-        # Otherwise, handle a single track result: prepend and play immediately
-        track = tracks[0]
-        track.requester = ctx.author
-        _prepend_tracks_to_queue(vc, [track])
-        try:
-            if vc.playing or vc.paused:
-                await vc.stop()
-            await vc.play(vc.queue.get())
-        except Exception as e:
-            logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to start playing {getattr(track, 'title', 'track')}: {e}")
-            return await ctx.send("Failed to play the track.")
-        else:
-            logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Started playnow request: {getattr(track, 'title', 'track')}")
-            if not vc.panel_message:
-                vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
-            else:
-                await self.update_panel_message(vc)
 
     @music.command(name="skip", aliases=['s'])
     async def skip_cmd(self, ctx: commands.Context):
