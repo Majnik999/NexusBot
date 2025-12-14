@@ -119,7 +119,20 @@ ascii_art = """
 --------------------------------------------------------------------------------
 """
 
+import threading
+from app import create_app
+
+# Function to run Flask app
+def run_flask(bot_instance):
+    app = create_app(bot_instance)
+    app.run(host='0.0.0.0', port=3182, debug=False)
+
 if __name__ == "__main__":
+    # Start Flask in a separate thread
+    flask_thread = threading.Thread(target=run_flask, args=(bot,))
+    flask_thread.daemon = True
+    flask_thread.start()
+
     os.system("clear")
     print(ascii_art)
     

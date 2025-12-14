@@ -30,6 +30,14 @@ QUIT_COMMAND: bool = True
 # Bots invite link
 INVITE_LINK: str = "https://www.discord.com/"
 
+# Admin user IDs for the Flask panel
+ADMIN_IDS: list[int] = [123456789]
+
+
+# Discord OAuth2 settings
+DISCORD_CLIENT_ID: str = "YOUR_DISCORD_CLIENT_ID"
+DISCORD_CLIENT_SECRET: str = "YOUR_DISCORD_CLIENT_SECRET"
+
 # Default economy settings
 # DEFAULT_DAILY_REWARD: intiger = HOW MUCH COINS DO USERS GET ON DAILY COMMAND
 # DAILY_COOLDOWN_HOURS: intiger = HOW MUCH HOURS DO USERS NEED TO WAIT TO GET DAILY REWARD IN HOURS

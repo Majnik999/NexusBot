@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Panel</title>
+</head>
+<body>
+    <h1>Welcome to the Bot Panel!</h1>
+    <p>Bot is in {{ server_count }} servers.</p>
+
+    {% if session.admin_logged_in %}
+    <p>You are logged in as an admin. <a href="{{ url_for('logout') }}">Logout</a></p>
+    <h2>Admin Actions</h2>
+    <!-- Add admin-specific content here -->
+    {% else %}
+    <p><a href="{{ url_for('discord_login') }}">Admin Login</a></p>
+    {% endif %}
+</body>
+</html>
