@@ -105,6 +105,17 @@ class Music(commands.Cog):
         self._lavalink_host: typing.Optional[str] = None
         self._lavalink_port: typing.Optional[int] = None
 
+    async def cog_unload(self):
+        """Disconnect all players when the cog is unloaded."""
+        logger.info("Music cog unloaded. Disconnecting all players...")
+        for guild_id, player in wavelink.Pool.nodes.items():
+            if player.is_connected:
+                try:
+                    await player.disconnect()
+                    logger.info(f"Disconnected player in guild {guild_id}")
+                except Exception as e:
+                    logger.error(f"Error disconnecting player in guild {guild_id}: {e}")
+
     async def connect_to_nodes(self):
         await self.bot.wait_until_ready()
         try:

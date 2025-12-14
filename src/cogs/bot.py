@@ -127,7 +127,7 @@ class OwnerCommands(commands.Cog):
             if not module.startswith("src.cogs."):
                 module = f"src.cogs.{module}"
             
-            self.bot.reload_extension(module)
+            await self.bot.reload_extension(module)
             await ctx.send(f"✅ Module `{module}` reloaded!")
         except commands.ExtensionNotFound:
             await ctx.send(f"❌ Module `{module}` not found.")
