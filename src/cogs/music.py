@@ -81,6 +81,77 @@ class MusicPanel(discord.ui.View):
         await self.cog.pause_resume_logic(interaction)
         await self._update_panel(interaction, vc)
 
+
+class QueueView(discord.ui.View):
+    def __init__(self, tracks: list, author_id: int, per_page: int = 10, timeout: float = 120.0):
+        super().__init__(timeout=timeout)
+        self.tracks = tracks
+        self.author_id = author_id
+        self.per_page = per_page
+        self.page = 0
+
+    def _build_embed(self) -> discord.Embed:
+        total = len(self.tracks)
+        pages = max(1, (total + self.per_page - 1) // self.per_page)
+        start = self.page * self.per_page
+        end = start + self.per_page
+        chunk = self.tracks[start:end]
+        if chunk:
+            lines = []
+            for i, track in enumerate(chunk, start=start):
+                title = getattr(track, 'title', 'Unknown')
+                lines.append(f"`{i+1}.` **{title}**")
+            desc = "\n".join(lines)
+        else:
+            desc = "No items on this page."
+        embed = discord.Embed(title=f"Queue ({total} tracks)", description=desc, color=discord.Color.gold())
+        embed.set_footer(text=f"Page {self.page+1}/{pages}")
+        return embed
+
+    async def _update_message(self, interaction: discord.Interaction):
+        embed = self._build_embed()
+        # Update button states
+        total = len(self.tracks)
+        pages = max(1, (total + self.per_page - 1) // self.per_page)
+        for child in self.children:
+            if getattr(child, 'custom_id', None) == 'music:queue_prev':
+                child.disabled = (self.page <= 0)
+            if getattr(child, 'custom_id', None) == 'music:queue_next':
+                child.disabled = (self.page >= pages - 1)
+        try:
+            await interaction.response.edit_message(embed=embed, view=self)
+        except Exception:
+            try:
+                await interaction.message.edit(embed=embed, view=self)
+            except Exception:
+                pass
+
+    @discord.ui.button(label='Previous', style=discord.ButtonStyle.secondary, custom_id='music:queue_prev')
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.page > 0:
+            self.page -= 1
+        await self._update_message(interaction)
+
+    @discord.ui.button(label='Next', style=discord.ButtonStyle.secondary, custom_id='music:queue_next')
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        total = len(self.tracks)
+        pages = max(1, (total + self.per_page - 1) // self.per_page)
+        if self.page < pages - 1:
+            self.page += 1
+        await self._update_message(interaction)
+
+    async def on_timeout(self):
+        # Disable buttons on timeout
+        for child in self.children:
+            child.disabled = True
+        # Attempt to edit the original message to disable controls
+        try:
+            # The view does not have direct access to the message; rely on stored state via interaction history.
+            # Best-effort: nothing to do here.
+            pass
+        except Exception:
+            pass
+
     @discord.ui.button(label='Repeat', style=discord.ButtonStyle.secondary, custom_id='music:repeat_toggle', row=1)
     async def repeat_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         vc, reply = await self.cog.get_player_and_validate(interaction)
@@ -370,6 +441,7 @@ class Music(commands.Cog):
         embed.add_field(name=PREFIX+"music play <query>", value="Play a song or add to queue", inline=False)
         embed.add_field(name=PREFIX+"music playnow <query>", value="Play the song immediately, bypassing the queue", inline=False)
         embed.add_field(name=PREFIX+"music skip", value="Skip the current song", inline=False)
+        embed.add_field(name=PREFIX+"music repeat", value="Toggle repeat for the current song", inline=False)
         embed.add_field(name=PREFIX+"music pause", value="Pause the current song", inline=False)
         embed.add_field(name=PREFIX+"music resume", value="Resume the paused song", inline=False)
         embed.add_field(name=PREFIX+"music stop", value="Stop playback and leave VC", inline=False)
@@ -475,23 +547,85 @@ class Music(commands.Cog):
             except Exception as e:
                 logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to connect to VC for playnow: {e}")
                 return await ctx.send("Failed to join your voice channel.")
+            try:
+                await vc.set_volume(50)
+            except Exception as e:
+                logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to set initial volume for playnow: {e}")
         try:
             tracks = await wavelink.Playable.search(search)
             if not tracks:
                 return await ctx.send("No results found.")
-            track = tracks[0]
-            track.requester = ctx.author
         except Exception as e:
             logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Playnow search failed: {e}")
             return await ctx.send("Error searching for that track.")
-        await self._clear_queue(vc)
-        if vc.playing or vc.paused:
-            await vc.stop()
-        await vc.play(track)
-        if not vc.panel_message:
-            vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
+
+        # Prepend requested track(s) so they play immediately, preserving the existing queue order.
+        def _prepend_tracks_to_queue(vc, new_tracks: list):
+            try:
+                # Drain existing queue into a temporary list
+                existing = []
+                try:
+                    while not vc.queue.is_empty:
+                        existing.append(vc.queue.get())
+                except Exception:
+                    # If queue access fails for any reason, fall back to leaving it unchanged
+                    existing = []
+                # Put new tracks first
+                for t in new_tracks:
+                    vc.queue.put(t)
+                # Re-add the old items after
+                for t in existing:
+                    vc.queue.put(t)
+            except Exception:
+                # Best-effort; if unable to reorder, append to the end instead
+                for t in new_tracks:
+                    try:
+                        vc.queue.put(t)
+                    except Exception:
+                        pass
+
+        # If a playlist was returned, prepend all tracks and start playback from the first new item
+        if isinstance(tracks, wavelink.Playlist):
+            new_tracks = []
+            for track in tracks.tracks:
+                track.requester = ctx.author
+                new_tracks.append(track)
+            _prepend_tracks_to_queue(vc, new_tracks)
+            try:
+                if vc.playing or vc.paused:
+                    await vc.stop()
+                # Play the first of the newly prepended tracks
+                await vc.play(vc.queue.get())
+            except Exception as e:
+                logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to play playlist for playnow: {e}")
+                return await ctx.send("Failed to play the playlist.")
+            else:
+                embed = discord.Embed(title="Playlist Added to Queue", description=f"Added {len(new_tracks)} tracks from {tracks.name}", color=discord.Color.green())
+                await ctx.send(embed=embed)
+                logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Started playing playlist via playnow: {tracks.name}")
+                if not vc.panel_message:
+                    vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
+                else:
+                    await self.update_panel_message(vc)
+            return
+
+        # Otherwise, handle a single track result: prepend and play immediately
+        track = tracks[0]
+        track.requester = ctx.author
+        _prepend_tracks_to_queue(vc, [track])
+        try:
+            if vc.playing or vc.paused:
+                await vc.stop()
+            await vc.play(vc.queue.get())
+        except Exception as e:
+            logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to start playing {getattr(track, 'title', 'track')}: {e}")
+            return await ctx.send("Failed to play the track.")
         else:
-            await self.update_panel_message(vc)
+            logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Started playnow request: {getattr(track, 'title', 'track')}")
+            if not vc.panel_message:
+                vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
+            else:
+                await self.update_panel_message(vc)
 
     @music.command(name="skip", aliases=['s'])
     async def skip_cmd(self, ctx: commands.Context):
@@ -514,9 +648,50 @@ class Music(commands.Cog):
         vc: CustomPlayer = ctx.voice_client
         if not vc or vc.queue.is_empty:
             return await ctx.send("Queue is empty!")
-        queue_list = "\n".join(f"`{i+1}.` **{track.title}**" for i, track in enumerate(vc.queue[:10]))
-        embed = discord.Embed(title=f"Queue ({len(vc.queue)} tracks)", description=queue_list, color=discord.Color.gold())
-        await ctx.send(embed=embed)
+        # Snapshot the queue so pagination remains consistent while viewing
+        try:
+            tracks = list(vc.queue)
+        except Exception:
+            # Fallback to slicing if list() isn't supported
+            tracks = vc.queue[:]
+        total = len(tracks)
+        per_page = 10
+        # Build initial embed for page 1
+        def build_page(page: int):
+            start = page * per_page
+            end = start + per_page
+            chunk = tracks[start:end]
+            if chunk:
+                lines = []
+                for i, track in enumerate(chunk, start=start):
+                    title = getattr(track, 'title', 'Unknown')
+                    lines.append(f"`{i+1}.` **{title}**")
+                desc = "\n".join(lines)
+            else:
+                desc = "No items on this page."
+            embed = discord.Embed(title=f"Queue ({total} tracks)", description=desc, color=discord.Color.gold())
+            pages = max(1, (total + per_page - 1) // per_page)
+            embed.set_footer(text=f"Page {1}/{pages}")
+            return embed
+
+        if total <= per_page:
+            await ctx.send(embed=build_page(0))
+            return
+
+        view = QueueView(tracks=tracks, author_id=ctx.author.id, per_page=per_page)
+        embed = view._build_embed()
+        await ctx.send(embed=embed, view=view)
+
+    @music.command(name="repeat", aliases=['loop', "l", "r"])
+    async def repeat_cmd(self, ctx: commands.Context):
+        vc: CustomPlayer = ctx.voice_client
+        if not vc:
+            return await ctx.send("I'm not connected to a voice channel!")
+        vc.repeat_track = not vc.repeat_track
+        status = "enabled" if vc.repeat_track else "disabled"
+        await ctx.send(f"Track repeat has been **{status}**.")
+        if vc.panel_message:
+            await self.update_panel_message(vc)
 
     @music.command(name="panel", aliases=['np'])
     async def panel_cmd(self, ctx: commands.Context):
