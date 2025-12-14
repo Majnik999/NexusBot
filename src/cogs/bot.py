@@ -26,6 +26,7 @@ def help_one() -> List[discord.Embed]:
     embed.add_field(name=f"{PREFIX}bot help", value="Shows this message!", inline=False)
     embed.add_field(name=f"{PREFIX}bot quit", value="Turns off bot", inline=False)
     embed.add_field(name=f"{PREFIX}bot ping", value="Get bots latency!", inline=False)
+    embed.add_field(name=f"{PREFIX}bot reload <module/settings>", value="Reload a cog or settings.py!", inline=False)
     
     embed2 = discord.Embed(
         title="🎮 Activity | Help",
@@ -104,6 +105,46 @@ class OwnerCommands(commands.Cog):
     @botping.error
     async def handle_error_botping(self, ctx, _error):
         await ctx.send("❌ You are not owner or some error happened!")
+
+    @botgroup.command(name="reload", hidden=True)
+    @commands.is_owner()
+    async def reload_command(self, ctx, *, module: str):
+        if module.lower() == "settings":
+            try:
+                import importlib
+                import sys
+                import settings
+                importlib.reload(settings)
+                # Update any relevant attributes that depend on settings
+                # For example, if PREFIX is used directly in this cog:
+                # self.bot.command_prefix = settings.PREFIX 
+                await ctx.send("✅ `settings.py` reloaded!")
+            except Exception as e:
+                await ctx.send(f"❌ Error reloading `settings.py`: {e}")
+            return
+
+        try:
+            if not module.startswith("src.cogs."):
+                module = f"src.cogs.{module}"
+            
+            self.bot.reload_extension(module)
+            await ctx.send(f"✅ Module `{module}` reloaded!")
+        except commands.ExtensionNotFound:
+            await ctx.send(f"❌ Module `{module}` not found.")
+        except commands.ExtensionNotLoaded:
+            await ctx.send(f"❌ Module `{module}` is not loaded.")
+        except Exception as e:
+            await ctx.send(f"❌ Error reloading module `{module}`: {e}")
+
+    @reload_command.error
+    async def reload_command_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("❌ Please specify a module to reload (e.g., `!bot reload cogs.mycog` or `!bot reload settings`).")
+        elif isinstance(error, commands.NotOwner):
+            await ctx.send("❌ You are not the owner of this bot.")
+        else:
+            await ctx.send(f"❌ An unexpected error occurred: {error}")
+
     # Activity management (owner only)
     @commands.group(name="activity", invoke_without_command=True, hidden=True)
     @commands.is_owner()
