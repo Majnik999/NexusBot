@@ -682,7 +682,7 @@ class Music(commands.Cog):
         embed = view._build_embed()
         await ctx.send(embed=embed, view=view)
 
-    @music.command(name="repeat", aliases=['loop', "l", "r"])
+    @music.command(name="repeat", aliases=['loop', "l", "re"])
     async def repeat_cmd(self, ctx: commands.Context):
         vc: CustomPlayer = ctx.voice_client
         if not vc:
