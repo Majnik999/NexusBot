@@ -80,6 +80,39 @@ class MusicPanel(discord.ui.View):
             return
         await self.cog.pause_resume_logic(interaction)
         await self._update_panel(interaction, vc)
+        return
+
+    @discord.ui.button(label='Repeat', style=discord.ButtonStyle.secondary, custom_id='music:repeat_toggle', row=1)
+    async def repeat_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        vc, reply = await self.cog.get_player_and_validate(interaction)
+        if not vc:
+            return
+        vc.repeat_track = not vc.repeat_track
+        # Defer so update_panel_message will edit the stored panel message
+        try:
+            await interaction.response.defer()
+        except Exception:
+            pass
+        await self.cog.update_panel_message(vc, interaction=interaction)
+
+    @discord.ui.button(label='Reload', style=discord.ButtonStyle.secondary, custom_id='music:reload_panel', row=1)
+    async def reload_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        vc, reply = await self.cog.get_player_and_validate(interaction)
+        if not vc:
+            return
+        try:
+            await interaction.response.defer()
+        except Exception:
+            pass
+        # If panel exists, update it; otherwise create a fresh panel message
+        if vc.panel_message:
+            await self.cog.update_panel_message(vc, interaction=interaction)
+        else:
+            try:
+                msg = await interaction.followup.send(embed=await self.cog.build_embed(vc), view=self)
+                vc.panel_message = msg
+            except Exception:
+                pass
 
 
 class QueueView(discord.ui.View):
