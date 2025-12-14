@@ -106,16 +106,57 @@ class Music(commands.Cog):
         self._lavalink_host: typing.Optional[str] = None
         self._lavalink_port: typing.Optional[int] = None
 
+    async def _ensure_deaf(self, vc: CustomPlayer):
+        """Try to server-deafen the bot; ensure self-deaf is enabled as a fallback.
+
+        We set `self_deaf=True` on connect which guarantees the bot won't hear users.
+        This method attempts to server-deafen (`guild.me.edit(deafen=True)`) so moderators
+        see the bot as server-deafened if permissions allow.
+        """
+        if not vc or not vc.guild:
+            return
+        # Try server-deafen first
+        try:
+            member = vc.guild.me
+            # Only attempt if not already server-deaf
+            if not getattr(member.voice, "deaf", False):
+                await member.edit(deafen=True)
+                logger.info(f"[{vc.guild.id}] Server-deafened bot successfully.")
+                return
+        except discord.Forbidden:
+            logger.info(f"[{vc.guild.id}] Missing permissions to server-deafen; using self-deafen.")
+        except Exception as e:
+            logger.warning(f"[{vc.guild.id}] Error attempting server-deafen: {e}")
+        # At this point, ensure the voice client is self-deafened (connect uses self_deaf=True).
+        try:
+            # Some VoiceClient implementations expose `self_deaf` via the voice state; set if possible
+            if getattr(vc, "deaf", None) is False:
+                # Best-effort: request a voice state update with self_deaf True via guild.change_voice_state
+                try:
+                    await vc.guild.change_voice_state(vc.guild.me, self_deaf=True)
+                except Exception:
+                    # If above API is unavailable, log and continue; the connect call sets self_deaf.
+                    pass
+        except Exception:
+            pass
+
     async def cog_unload(self):
         """Disconnect all players when the cog is unloaded."""
         logger.info("Music cog unloaded. Disconnecting all players...")
-        for guild_id, player in wavelink.Pool.nodes.items():
-            if player.is_connected:
+        try:
+            # Make a copy of nodes to avoid runtime mutation during iteration.
+            nodes = list(getattr(wavelink.Pool, 'nodes', {}).items())
+            for guild_id, player in nodes:
                 try:
-                    await player.disconnect()
-                    logger.info(f"Disconnected player in guild {guild_id}")
+                    if getattr(player, 'is_connected', False):
+                        await player.disconnect()
+                        logger.info(f"Disconnected player in guild {guild_id}")
                 except Exception as e:
+                    # Keep logs concise during reloads; avoid printing stack traces.
                     logger.error(f"Error disconnecting player in guild {guild_id}: {e}")
+        except Exception as e:
+            # Catch any unexpected issues during unload and log succinctly.
+            logger.error(f"Error during music cog unload: {e}")
 
     async def connect_to_nodes(self):
         await self.bot.wait_until_ready()
@@ -256,20 +297,18 @@ class Music(commands.Cog):
                 await self.update_panel_message(player)
             return
         if player.queue.is_empty:
-            finished_embed = discord.Embed(title="Playback Finished! ⏹️", description="The music queue is now empty. See you next time!", color=discord.Color.red())
+            stopped_embed = discord.Embed(title="Music Stopped", description="Playback has ended and the queue is empty.", color=discord.Color.red())
             if player.panel_message:
                 try:
-                    await player.panel_message.edit(embed=finished_embed, view=None)
+                    await player.panel_message.edit(embed=stopped_embed, view=None)
                 except discord.HTTPException as e:
-                    logger.warning(f"[{guild_name} ({guild_id})] Failed to edit music panel message: {e}")
-                    try:
-                        await player.panel_message.delete()
-                    except:
-                        pass
+                    # If the message is missing, clear the reference; otherwise log.
+                    if getattr(e, "status", None) == 404:
+                        player.panel_message = None
+                    else:
+                        logger.warning(f"[{guild_name} ({guild_id})] Failed to edit music panel message: {e}")
                 except Exception as e:
                     logger.warning(f"[{guild_name} ({guild_id})] Unexpected error during panel cleanup: {e}")
-                finally:
-                    player.panel_message = None
             try:
                 await player.disconnect()
             except Exception as e:
@@ -293,11 +332,22 @@ class Music(commands.Cog):
         except Exception as e:
             logger.warning(f"[{vc.guild.name} ({vc.guild.id})] Error during disconnect: {e}")
         if vc.panel_message:
+            # Update the existing panel to show stopped state instead of deleting it.
             try:
-                await vc.panel_message.delete()
-            except:
-                pass
-            vc.panel_message = None
+                stopped_embed = discord.Embed(
+                    title="Music Stopped",
+                    description=f"Playback has been stopped. Use `{PREFIX}music play <song>` to start playback again.",
+                    color=discord.Color.red()
+                )
+                try:
+                    await vc.panel_message.edit(embed=stopped_embed, view=None)
+                except discord.HTTPException as e:
+                    if getattr(e, "status", None) == 404:
+                        vc.panel_message = None
+                    else:
+                        logger.warning(f"[{vc.guild.id if vc.guild else 'N/A'}] Failed to edit panel message on disconnect: {e}")
+            except Exception as e:
+                logger.warning(f"[{vc.guild.id if vc.guild else 'N/A'}] Error updating panel message on disconnect: {e}")
 
     async def skip_logic(self, interaction_or_ctx):
         vc, reply = await self.get_player_and_validate(interaction_or_ctx)
@@ -334,8 +384,12 @@ class Music(commands.Cog):
             if not ctx.author.voice:
                 return await ctx.send("Join a VC first!")
             try:
-                vc = await ctx.author.voice.channel.connect(cls=CustomPlayer)
+                vc = await ctx.author.voice.channel.connect(cls=CustomPlayer, self_deaf=True)
                 vc.text_channel = ctx.channel
+                try:
+                    await self._ensure_deaf(vc)
+                except Exception:
+                    pass
             except Exception as e:
                 logger.warning(f"[{ctx.guild.name if ctx.guild else 'N/A'} ({ctx.guild.id if ctx.guild else 'N/A'})] Failed to connect to VC: {e}")
                 return await ctx.send("Failed to join your voice channel.")
@@ -362,7 +416,17 @@ class Music(commands.Cog):
                 track.requester = ctx.author
                 vc.queue.put(track)
                 added_count += 1
-            embed = discord.Embed(title="Playlist Added to Queue", description=f"Added {added_count} tracks from [{tracks.name}]({tracks.uri})", color=discord.Color.green())
+            # Safely build a link for the playlist: some Playlist objects may not have `uri`.
+            playlist_url = getattr(tracks, "uri", None)
+            if not playlist_url:
+                # Fall back to the first track's uri if available
+                first = tracks.tracks[0] if getattr(tracks, "tracks", None) else None
+                playlist_url = getattr(first, "uri", None) if first else None
+            if playlist_url:
+                desc = f"Added {added_count} tracks from [{tracks.name}]({playlist_url})"
+            else:
+                desc = f"Added {added_count} tracks from {tracks.name}"
+            embed = discord.Embed(title="Playlist Added to Queue", description=desc, color=discord.Color.green())
             await ctx.send(embed=embed)
             logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Queued playlist: {tracks.name} with {added_count} tracks")
             if not vc.playing and not vc.paused:
@@ -402,8 +466,12 @@ class Music(commands.Cog):
             if not ctx.author.voice:
                 return await ctx.send("Join a VC first!")
             try:
-                vc = await ctx.author.voice.channel.connect(cls=CustomPlayer)
+                vc = await ctx.author.voice.channel.connect(cls=CustomPlayer, self_deaf=True)
                 vc.text_channel = ctx.channel
+                try:
+                    await self._ensure_deaf(vc)
+                except Exception:
+                    pass
             except Exception as e:
                 logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to connect to VC for playnow: {e}")
                 return await ctx.send("Failed to join your voice channel.")
@@ -578,8 +646,12 @@ class Music(commands.Cog):
             if not interaction.user.voice:
                 return await interaction.followup.send("Join a voice channel first!", ephemeral=True)
             try:
-                vc = await interaction.user.voice.channel.connect(cls=CustomPlayer)
+                vc = await interaction.user.voice.channel.connect(cls=CustomPlayer, self_deaf=True)
                 vc.text_channel = interaction.channel
+                try:
+                    await self._ensure_deaf(vc)
+                except Exception:
+                    pass
             except Exception as e:
                 logger.warning(f"[{interaction.guild.id}] Failed to connect to VC via context menu: {e}")
                 return await interaction.followup.send("Could not join your voice channel.", ephemeral=True)
@@ -598,7 +670,16 @@ class Music(commands.Cog):
                     track.requester = interaction.user
                     vc.queue.put(track)
                     added_count += 1
-                embed = discord.Embed(title="Playlist Added to Queue", description=f"Added {added_count} tracks from [{tracks.name}]({tracks.uri})", color=discord.Color.green())
+                # Safely build a link for the playlist: some Playlist objects may not have `uri`.
+                playlist_url = getattr(tracks, "uri", None)
+                if not playlist_url:
+                    first = tracks.tracks[0] if getattr(tracks, "tracks", None) else None
+                    playlist_url = getattr(first, "uri", None) if first else None
+                if playlist_url:
+                    desc = f"Added {added_count} tracks from [{tracks.name}]({playlist_url})"
+                else:
+                    desc = f"Added {added_count} tracks from {tracks.name}"
+                embed = discord.Embed(title="Playlist Added to Queue", description=desc, color=discord.Color.green())
                 await interaction.followup.send(embed=embed)
                 logger.info(f"[{interaction.guild.id}] Queued playlist: {tracks.name} with {added_count} tracks")
                 if not vc.playing and not vc.paused:
