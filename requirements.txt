@@ -14,4 +14,4 @@ qrcode[pil]
 google-generativeai
 gTTS
 imageio-ffmpeg
-Flask
+ytdlp

@@ -9,6 +9,7 @@ import asyncio
 import time
 import re
 import urllib.parse as _urlparse
+import yt_dlp
 
 class CustomPlayer(wavelink.Player):
     def __init__(self, *args, **kwargs):
@@ -349,27 +350,50 @@ class Music(commands.Cog):
             except Exception as e:
                 logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to create music panel message: {e}")
                 vc.panel_message = None
-        tracks = await wavelink.Playable.search(search, source=wavelink.TrackSource.YouTube)
+        tracks = await wavelink.Playable.search(search)
         if not tracks:
             await ctx.send(f"❌ No music found for `{search}`!")
             logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] No music found for search: {search}")
             return
-        track = tracks[0]
-        if vc.playing or vc.paused:
-            vc.queue.put(track)
-            embed = discord.Embed(title="Added to Queue", description=f"[{track.title}]({track.uri})", color=discord.Color.green())
+
+        if isinstance(tracks, wavelink.Playlist):
+            added_count = 0
+            for track in tracks.tracks:
+                track.requester = ctx.author
+                vc.queue.put(track)
+                added_count += 1
+            embed = discord.Embed(title="Playlist Added to Queue", description=f"Added {added_count} tracks from [{tracks.name}]({tracks.uri})", color=discord.Color.green())
             await ctx.send(embed=embed)
-            logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Queued: {track.title}")
+            logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Queued playlist: {tracks.name} with {added_count} tracks")
+            if not vc.playing and not vc.paused:
+                try:
+                    await vc.play(vc.queue.get())
+                except Exception as e:
+                    logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to start playing playlist: {e}")
+                    return await ctx.send("Failed to play the playlist.")
+                else:
+                    logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Started playing playlist.")
+                    if vc.panel_message:
+                        await self.update_panel_message(vc)
+            return
         else:
-            try:
-                await vc.play(track)
-            except Exception as e:
-                logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to start playing {track.title}: {e}")
-                return await ctx.send("Failed to play the track.")
+            track = tracks[0]
+            track.requester = ctx.author
+            if vc.playing or vc.paused:
+                vc.queue.put(track)
+                embed = discord.Embed(title="Added to Queue", description=f"[{track.title}]({track.uri})", color=discord.Color.green())
+                await ctx.send(embed=embed)
+                logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Queued: {track.title}")
             else:
-                logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Started play request: {track.title}")
-                if vc.panel_message:
-                    await self.update_panel_message(vc)
+                try:
+                    await vc.play(track)
+                except Exception as e:
+                    logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to start playing {track.title}: {e}")
+                    return await ctx.send("Failed to play the track.")
+                else:
+                    logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Started play request: {track.title}")
+                    if vc.panel_message:
+                        await self.update_panel_message(vc)
 
     @music.command(name="playnow", aliases=['pn'])
     async def playnow_cmd(self, ctx: commands.Context, *, search: str):
@@ -567,16 +591,37 @@ class Music(commands.Cog):
             tracks = await wavelink.Playable.search(query)
             if not tracks:
                 return await interaction.followup.send("Could not find any playable audio for that link.", ephemeral=True)
-            track = tracks[0]
-            track.requester = interaction.user
-            if vc.playing or not vc.queue.is_empty:
-                vc.queue.put(track)
-                embed = discord.Embed(title="Added to Queue", description=f"[{track.title}]({track.uri})", color=discord.Color.green())
+
+            if isinstance(tracks, wavelink.Playlist):
+                added_count = 0
+                for track in tracks.tracks:
+                    track.requester = interaction.user
+                    vc.queue.put(track)
+                    added_count += 1
+                embed = discord.Embed(title="Playlist Added to Queue", description=f"Added {added_count} tracks from [{tracks.name}]({tracks.uri})", color=discord.Color.green())
                 await interaction.followup.send(embed=embed)
+                logger.info(f"[{interaction.guild.id}] Queued playlist: {tracks.name} with {added_count} tracks")
+                if not vc.playing and not vc.paused:
+                    try:
+                        await vc.play(vc.queue.get())
+                    except Exception as e:
+                        logger.warning(f"[{interaction.guild.id}] Failed to start playing playlist via context menu: {e}")
+                        return await interaction.followup.send("Failed to play the playlist.", ephemeral=True)
+                    else:
+                        logger.info(f"[{interaction.guild.id}] Started playing playlist via context menu.")
+                        if vc.panel_message:
+                            await self.update_panel_message(vc)
             else:
-                await vc.play(track)
-            if not vc.panel_message:
-                vc.panel_message = await interaction.followup.send(embed=await self.build_embed(vc), view=self.panel_view)
+                track = tracks[0]
+                track.requester = interaction.user
+                if vc.playing or not vc.queue.is_empty:
+                    vc.queue.put(track)
+                    embed = discord.Embed(title="Added to Queue", description=f"[{track.title}]({track.uri})", color=discord.Color.green())
+                    await interaction.followup.send(embed=embed)
+                else:
+                    await vc.play(track)
+                if not vc.panel_message:
+                    vc.panel_message = await interaction.followup.send(embed=await self.build_embed(vc), view=self.panel_view)
         except Exception as e:
             logger.warning(f"[{interaction.guild.id}] Context-menu play failed: {e}")
             await interaction.followup.send("An error occurred while trying to play that link.", ephemeral=True)
