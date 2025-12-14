@@ -126,13 +126,13 @@ class QueueView(discord.ui.View):
             except Exception:
                 pass
 
-    @discord.ui.button(label='Previous', style=discord.ButtonStyle.secondary, custom_id='music:queue_prev')
+    @discord.ui.button(label='Previous', style=discord.ButtonStyle.secondary, custom_id='music:queue_prev', row=1)
     async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.page > 0:
             self.page -= 1
         await self._update_message(interaction)
 
-    @discord.ui.button(label='Next', style=discord.ButtonStyle.secondary, custom_id='music:queue_next')
+    @discord.ui.button(label='Next', style=discord.ButtonStyle.secondary, custom_id='music:queue_next', row=1)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         total = len(self.tracks)
         pages = max(1, (total + self.per_page - 1) // self.per_page)
@@ -151,15 +151,6 @@ class QueueView(discord.ui.View):
             pass
         except Exception:
             pass
-
-    @discord.ui.button(label='Repeat', style=discord.ButtonStyle.secondary, custom_id='music:repeat_toggle', row=1)
-    async def repeat_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        vc, reply = await self.cog.get_player_and_validate(interaction)
-        if not vc:
-            return
-        vc.repeat_track = not vc.repeat_track
-        button.style = discord.ButtonStyle.success if vc.repeat_track else discord.ButtonStyle.secondary
-        await self._update_panel(interaction, vc)
 
     @discord.ui.button(label='Refresh', style=discord.ButtonStyle.secondary, custom_id='music:refresh_panel', row=1)
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
