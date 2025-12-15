@@ -214,13 +214,13 @@ class Music(commands.Cog):
                 try:
                     await self.update_panel_message(vc)
                 except Exception as e:
-                    logger.warning(f"[{vc.guild.id}] Error updating panel in background: {e}")
+                    logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Error updating panel in background: {e}")
 
     @commands.Cog.listener()
     async def on_ready(self):
         if not self.panel_updater.is_running():
             self.panel_updater.start()
-        logger.info("Music cog ready, panel updater started.")
+        logger.info("[MUSIC] Music cog ready, panel updater started.")
 
     async def _ensure_deaf(self, vc: CustomPlayer):
         """Try to server-deafen the bot; ensure self-deaf is enabled as a fallback.
@@ -237,12 +237,12 @@ class Music(commands.Cog):
             # Only attempt if not already server-deaf
             if not getattr(member.voice, "deaf", False):
                 await member.edit(deafen=True)
-                logger.info(f"[{vc.guild.id}] Server-deafened bot successfully.")
+                logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Server-deafened bot successfully.")
                 return
         except discord.Forbidden:
-            logger.info(f"[{vc.guild.id}] Missing permissions to server-deafen; using self-deafen.")
+            logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Missing permissions to server-deafen; using self-deafen.")
         except Exception as e:
-            logger.warning(f"[{vc.guild.id}] Error attempting server-deafen: {e}")
+            logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Error attempting server-deafen: {e}")
         # At this point, ensure the voice client is self-deafened (connect uses self_deaf=True).
         try:
             # Some VoiceClient implementations expose `self_deaf` via the voice state; set if possible
@@ -258,7 +258,7 @@ class Music(commands.Cog):
 
     async def cog_unload(self):
         """Disconnect all players when the cog is unloaded."""
-        logger.info("Music cog unloaded. Disconnecting all players...")
+        logger.info("[MUSIC] Music cog unloaded. Disconnecting all players...")
         self.panel_updater.cancel()
         try:
             # Make a copy of nodes to avoid runtime mutation during iteration.
@@ -267,13 +267,13 @@ class Music(commands.Cog):
                 try:
                     if getattr(player, 'is_connected', False):
                         await player.disconnect()
-                        logger.info(f"Disconnected player in guild {guild_id}")
+                        logger.info(f"[MUSIC] Disconnected player in guild {guild_id}")
                 except Exception as e:
                     # Keep logs concise during reloads; avoid printing stack traces.
-                    logger.error(f"Error disconnecting player in guild {guild_id}: {e}")
+                    logger.error(f"[MUSIC] Error disconnecting player in guild {guild_id}: {e}")
         except Exception as e:
             # Catch any unexpected issues during unload and log succinctly.
-            logger.error(f"Error during music cog unload: {e}")
+            logger.error(f"[MUSIC] Error during music cog unload: {e}")
 
     async def connect_to_nodes(self):
         await self.bot.wait_until_ready()
@@ -288,9 +288,9 @@ class Music(commands.Cog):
             except RuntimeError:
                 pass
             self._lavalink_online = True
-            logger.info("Connected to Lavalink node and started monitor.")
+            logger.info("[MUSIC] Connected to Lavalink node and started monitor.")
         except Exception:
-            logger.exception("Failed to connect Lavalink node during startup.")
+            logger.exception("[MUSIC] Failed to connect Lavalink node during startup.")
             parsed = _urlparse.urlparse(LAVALINK_URI)
             self._lavalink_host = parsed.hostname
             self._lavalink_port = parsed.port or (443 if parsed.scheme == "wss" else 80)
@@ -323,9 +323,9 @@ class Music(commands.Cog):
 
     async def update_panel_message(self, vc: CustomPlayer, interaction: typing.Optional[discord.Interaction] = None):
         if not vc.panel_message:
-            logger.debug(f"[{vc.guild.id if vc.guild else 'N/A'}] No panel message found for update.")
+            logger.debug(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] No panel message found for update.")
             return
-        logger.debug(f"[{vc.guild.id if vc.guild else 'N/A'}] Updating panel message.")
+        logger.debug(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Updating panel message.")
         new_embed = await self.build_embed(vc)
         view_to_send = self.panel_view
         for item in view_to_send.children:
@@ -339,18 +339,18 @@ class Music(commands.Cog):
             try:
                 await interaction.response.edit_message(embed=new_embed, view=view_to_send)
             except Exception as e:
-                logger.warning(f"[{vc.guild.id if vc.guild else 'N/A'}] Failed to edit interaction message: {e}")
+                logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to edit interaction message: {e}")
         else:
             try:
                 await vc.panel_message.edit(embed=new_embed, view=view_to_send)
             except discord.HTTPException as e:
                 if getattr(e, "status", None) == 404:
                     vc.panel_message = None
-                    logger.info(f"[{vc.guild.id if vc.guild else 'N/A'}] Panel message not found; cleared reference.")
+                    logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Panel message not found; cleared reference.")
                 else:
-                    logger.warning(f"[{vc.guild.id if vc.guild else 'N/A'}] Failed editing panel message: {e}")
+                    logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed editing panel message: {e}")
             except Exception as e:
-                logger.warning(f"[{vc.guild.id if vc.guild else 'N/A'}] Unexpected error updating panel: {e}")
+                logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Unexpected error updating panel: {e}")
 
     async def build_embed(self, vc: CustomPlayer) -> discord.Embed:
         def format_time(ms):
@@ -388,7 +388,7 @@ class Music(commands.Cog):
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
-        logger.info(f"Lavalink Node '{payload.node.identifier}' ready at {payload.node.uri}")
+        logger.info(f"[MUSIC] Lavalink Node '{payload.node.identifier}' ready at {payload.node.uri}")
 
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
@@ -398,9 +398,9 @@ class Music(commands.Cog):
         guild_id = player.guild.id if player.guild else "N/A"
         requester = getattr(track, "requester", None)
         if requester:
-            logger.info(f"[{guild_name} ({guild_id})] Now playing: {track.title} (requested by {requester})")
+            logger.info(f"[MUSIC | {player.guild.name if player.guild else "Unknown"} | ({player.guild.id if player.guild else "N/A"})] Now playing: {track.title} (requested by {requester})")
         else:
-            logger.info(f"[{guild_name} ({guild_id})] Now playing: {track.title}")
+            logger.info(f"[MUSIC | {player.guild.name if player.guild else "Unknown"} | ({player.guild.id if player.guild else "N/A"})] Now playing: {track.title}")
 
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
@@ -425,19 +425,19 @@ class Music(commands.Cog):
                     if getattr(e, "status", None) == 404:
                         player.panel_message = None
                     else:
-                        logger.warning(f"[{guild_name} ({guild_id})] Failed to edit music panel message: {e}")
+                        logger.warning(f"[MUSIC | {player.guild.name if player.guild else "Unknown"} | ({player.guild.id if player.guild else "N/A"})] Failed to edit music panel message: {e}")
                 except Exception as e:
-                    logger.warning(f"[{guild_name} ({guild_id})] Unexpected error during panel cleanup: {e}")
+                    logger.warning(f"[MUSIC | {player.guild.name if player.guild else "Unknown"} | ({player.guild.id if player.guild else "N/A"})] Unexpected error during panel cleanup: {e}")
             try:
                 await player.disconnect()
             except Exception as e:
-                logger.warning(f"[{guild_name} ({guild_id})] Error disconnecting player: {e}")
+                logger.warning(f"[MUSIC | {player.guild.name if player.guild else "Unknown"} | ({player.guild.id if player.guild else "N/A"})] Error disconnecting player: {e}")
             return
         next_track = player.queue.get()
         try:
             await player.play(next_track)
         except Exception as e:
-            logger.warning(f"[{guild_name} ({guild_id})] Failed to play next track: {e}")
+            logger.warning(f"[MUSIC | {player.guild.name if player.guild else "Unknown"} | ({player.guild.id if player.guild else "N/A"})] Failed to play next track: {e}")
         else:
             if player.panel_message:
                 await self.update_panel_message(player)
@@ -449,7 +449,7 @@ class Music(commands.Cog):
         try:
             await vc.disconnect()
         except Exception as e:
-            logger.warning(f"[{vc.guild.name} ({vc.guild.id})] Error during disconnect: {e}")
+            logger.warning(f"[MUSIC | {vc.guild.name} ({vc.guild.id})] Error during disconnect: {e}")
         if vc.panel_message:
             # Update the existing panel to show stopped state instead of deleting it.
             try:
@@ -464,9 +464,9 @@ class Music(commands.Cog):
                     if getattr(e, "status", None) == 404:
                         vc.panel_message = None
                     else:
-                        logger.warning(f"[{vc.guild.id if vc.guild else 'N/A'}] Failed to edit panel message on disconnect: {e}")
+                        logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to edit panel message on disconnect: {e}")
             except Exception as e:
-                logger.warning(f"[{vc.guild.id if vc.guild else 'N/A'}] Error updating panel message on disconnect: {e}")
+                logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Error updating panel message on disconnect: {e}")
 
     async def skip_logic(self, interaction_or_ctx):
         vc, reply = await self.get_player_and_validate(interaction_or_ctx)
@@ -510,23 +510,23 @@ class Music(commands.Cog):
                 except Exception:
                     pass
             except Exception as e:
-                logger.warning(f"[{ctx.guild.name if ctx.guild else 'N/A'} ({ctx.guild.id if ctx.guild else 'N/A'})] Failed to connect to VC: {e}")
+                logger.warning(f"[MUSIC | {ctx.guild.name if ctx.guild else 'N/A'} ({ctx.guild.id if ctx.guild else 'N/A'})] Failed to connect to VC: {e}")
                 return await ctx.send("Failed to join your voice channel.")
             try:
                 await vc.set_volume(50)
             except Exception as e:
-                logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to set initial volume: {e}")
+                logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to set initial volume: {e}")
         if not vc.panel_message:
             try:
                 vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
                 await self.update_panel_message(vc)
             except Exception as e:
-                logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to create music panel message: {e}")
+                logger.warning(f"[{vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to create music panel message: {e}")
                 vc.panel_message = None
         tracks = await wavelink.Playable.search(search)
         if not tracks:
             await ctx.send(f"❌ No music found for `{search}`!")
-            logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] No music found for search: {search}")
+            logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] No music found for search: {search}")
             return
 
         if isinstance(tracks, wavelink.Playlist):
@@ -547,20 +547,20 @@ class Music(commands.Cog):
                 desc = f"Added {added_count} tracks from {tracks.name}"
             embed = discord.Embed(title="Playlist Added to Queue", description=desc, color=discord.Color.green())
             await ctx.send(embed=embed)
-            logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Queued playlist: {tracks.name} with {added_count} tracks")
+            logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Queued playlist: {tracks.name} with {added_count} tracks")
             if not vc.playing and not vc.paused:
                 try:
                     await vc.play(vc.queue.get())
                 except Exception as e:
-                    logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to start playing playlist: {e}")
+                    logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to start playing playlist: {e}")
                     return await ctx.send("Failed to play the playlist.")
                 else:
-                    logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Started playing playlist.")
+                    logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Started playing playlist.")
             if not vc.panel_message:
                 try:
                     vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
                 except Exception as e:
-                    logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to create music panel message for playlist: {e}")
+                    logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to create music panel message for playlist: {e}")
                     vc.panel_message = None
             if vc.panel_message:
                 await self.update_panel_message(vc)
@@ -572,15 +572,15 @@ class Music(commands.Cog):
                 vc.queue.put(track)
                 embed = discord.Embed(title="Added to Queue", description=f"[{track.title}]({track.uri})", color=discord.Color.green())
                 await ctx.send(embed=embed)
-                logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Queued: {track.title}")
+                logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Queued: {track.title}")
             else:
                 try:
                     await vc.play(track)
                 except Exception as e:
-                    logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to start playing {track.title}: {e}")
+                    logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to start playing {track.title}: {e}")
                     return await ctx.send("Failed to play the track.")
                 else:
-                    logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Started play request: {track.title}")
+                    logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Started play request: {track.title}")
                     if vc.panel_message:
                         await self.update_panel_message(vc)
 
@@ -678,7 +678,7 @@ class Music(commands.Cog):
                 try:
                     await txt.send(message)
                 except Exception:
-                    logger.debug(f"Failed to notify guild {guild.id} about Lavalink state.")
+                    logger.debug(f"[MUSIC] Failed to notify guild {guild.id} about Lavalink state.")
             self._last_notify[guild.id] = now
 
     @tasks.loop(seconds=20.0)
@@ -695,19 +695,19 @@ class Music(commands.Cog):
             except Exception:
                 pass
             if not self._lavalink_online:
-                logger.info("Lavalink server reachable again. Attempting to reconnect wavelink.Pool...")
+                logger.info("[MUSIC] Lavalink server reachable again. Attempting to reconnect wavelink.Pool...")
                 self._lavalink_online = True
                 try:
                     node = wavelink.Node(uri=LAVALINK_URI, password=LAVALINK_PASSWORD)
                     await wavelink.Pool.connect(client=self.bot, nodes=[node])
-                    logger.info("Reconnected to Lavalink node.")
+                    logger.info("[MUSIC] Reconnected to Lavalink node.")
                 except Exception:
-                    logger.exception("Failed to reconnect to Lavalink node after server came back.")
+                    logger.exception("[MUSIC] Failed to reconnect to Lavalink node after server came back.")
                 await self._notify_guilds("Lavalink is back online — attempting to resume music playback.")
         except Exception:
             if self._lavalink_online:
                 self._lavalink_online = False
-                logger.warning("Detected Lavalink server is unreachable. Will attempt to reconnect periodically.")
+                logger.warning("[MUSIC] Detected Lavalink server is unreachable. Will attempt to reconnect periodically.")
                 await self._notify_guilds("Lavalink appears to be offline. The bot will try to reconnect; playback may stop temporarily.")
 
     @lavalink_monitor.before_loop
@@ -722,7 +722,7 @@ class Music(commands.Cog):
                 except Exception:
                     break
         except Exception:
-            logger.debug(f"[{vc.guild.id if vc.guild else 'N/A'}] Error while clearing queue (ignored).")
+            logger.debug(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Error while clearing queue (ignored).")
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
@@ -738,7 +738,7 @@ class Music(commands.Cog):
         non_bot_count = sum(1 for m in channel.members if not m.bot)
         if non_bot_count == 0:
             guild_id = guild.id if guild else "N/A"
-            logger.info(f"[{guild_id}] No users left in voice channel; stopping and disconnecting player.")
+            logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] No users left in voice channel; stopping and disconnecting player.")
             try:
                 try:
                     if getattr(vc, "playing", False) or getattr(vc, "paused", False):
@@ -755,9 +755,9 @@ class Music(commands.Cog):
                 try:
                     await vc.disconnect()
                 except Exception:
-                    logger.warning(f"[{guild_id}] Disconnect attempt failed (ignored).")
+                    logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Disconnect attempt failed (ignored).")
             except Exception:
-                logger.exception(f"[{guild_id}] Error during empty-channel cleanup (ignored).")
+                logger.exception(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Error during empty-channel cleanup (ignored).")
 
 
     async def _play_from_url(self, interaction: discord.Interaction, url: str):
@@ -775,12 +775,12 @@ class Music(commands.Cog):
                 except Exception:
                     pass
             except Exception as e:
-                logger.warning(f"[{interaction.guild.id}] Failed to connect to VC via context menu: {e}")
+                logger.warning(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Failed to connect to VC via context menu: {e}")
                 return await interaction.followup.send("Could not join your voice channel.", ephemeral=True)
             try:
                 await vc.set_volume(50)
             except Exception as e:
-                logger.warning(f"[{interaction.guild.id}] Failed to set initial volume via context menu: {e}")
+                logger.warning(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Failed to set initial volume via context menu: {e}")
         try:
             tracks = await wavelink.Playable.search(query)
             if not tracks:
@@ -803,20 +803,20 @@ class Music(commands.Cog):
                     desc = f"Added {added_count} tracks from {tracks.name}"
                 embed = discord.Embed(title="Playlist Added to Queue", description=desc, color=discord.Color.green())
                 await interaction.followup.send(embed=embed)
-                logger.info(f"[{interaction.guild.id}] Queued playlist: {tracks.name} with {added_count} tracks")
+                logger.info(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Queued playlist: {tracks.name} with {added_count} tracks")
                 if not vc.playing and not vc.paused:
                     try:
                         await vc.play(vc.queue.get())
                     except Exception as e:
-                        logger.warning(f"[{interaction.guild.id}] Failed to start playing playlist via context menu: {e}")
+                        logger.warning(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Failed to start playing playlist via context menu: {e}")
                         return await interaction.followup.send("Failed to play the playlist.", ephemeral=True)
                     else:
-                        logger.info(f"[{interaction.guild.id}] Started playing playlist via context menu.")
+                        logger.info(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Started playing playlist via context menu.")
                 if not vc.panel_message:
                     try:
                         vc.panel_message = await interaction.followup.send(embed=await self.build_embed(vc), view=self.panel_view)
                     except Exception as e:
-                        logger.warning(f"[{interaction.guild.id}] Failed to create music panel message for playlist via context menu: {e}")
+                        logger.warning(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Failed to create music panel message for playlist via context menu: {e}")
                         vc.panel_message = None
                 if vc.panel_message:
                     await self.update_panel_message(vc)
@@ -832,7 +832,7 @@ class Music(commands.Cog):
                 if not vc.panel_message:
                     vc.panel_message = await interaction.followup.send(embed=await self.build_embed(vc), view=self.panel_view)
         except Exception as e:
-            logger.warning(f"[{interaction.guild.id}] Context-menu play failed: {e}")
+            logger.warning(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Context-menu play failed: {e}")
             await interaction.followup.send("An error occurred while trying to play that link.", ephemeral=True)
 
 async def setup(bot):

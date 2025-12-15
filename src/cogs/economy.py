@@ -21,7 +21,7 @@ class Economy(commands.Cog):
         self.voice_reward_amount = VOICE_REWARD_AMOUNT
 
     async def initialize_database(self):
-        logger.info("Initializing database")
+        logger.info("[ECONOMY] Initializing database")
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS economy (
@@ -55,13 +55,13 @@ class Economy(commands.Cog):
 
             
             await db.commit()
-        logger.debug("Database schema ensured")
+        logger.debug("[ECONOMY] Database schema ensured")
 
     # ================= INITIALIZATION =================
     async def cog_load(self):
-        logger.info("Cog load started")
+        logger.info("[ECONOMY] Cog load started")
         await self.initialize_database()
-        logger.info("Cog load finished and database initialized")
+        logger.info("[ECONOMY] Cog load finished and database initialized")
 
     def cog_unload(self):
         sessions = list(self.voice_sessions.values())
@@ -113,7 +113,7 @@ class Economy(commands.Cog):
                 channel = member.voice.channel
                 await channel.send(f"🎉 {member.mention} received `{self.voice_reward_amount}` coins for listening to music!", delete_after=120)
             except Exception as e:
-                logger.warning(f"Failed to announce {member.name} ({member.id}) about voice reward: {e}")
+                logger.warning(f"[ECONOMY] Failed to announce {member.name} ({member.id}) about voice reward: {e}")
         self.voice_sessions.pop((member.guild.id, member.id), None)
         interval = self.voice_reward_interval_minutes * 60
         while True:
@@ -159,7 +159,7 @@ class Economy(commands.Cog):
             ) as cursor:
                 row = await cursor.fetchone()
                 result = row[0] if row else 0
-                logger.debug(f"get_cooldown user={user_id} command={command} -> {result}")
+                logger.debug(f"[ECONOMY] get_cooldown user={user_id} command={command} -> {result}")
                 return result
 
     async def set_cooldown(self, user_id: int, command: str):
@@ -170,13 +170,13 @@ class Economy(commands.Cog):
                 (user_id, command, now),
             )
             await db.commit()
-        logger.debug(f"set_cooldown user={user_id} command={command} at={now}")
+        logger.debug(f"[ECONOMY] set_cooldown user={user_id} command={command} at={now}")
 
     async def delete_old_record_cooldown(self, user_id: int, command: str):
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("DELETE FROM cooldowns WHERE user_id = ? AND command = ?", (user_id, command))
             await db.commit()
-        logger.debug(f"delete_old_record_cooldown user={user_id} command={command}")
+        logger.debug(f"[ECONOMY] delete_old_record_cooldown user={user_id} command={command}")
 
     async def has_user_cooldown(
         self, user_id: int, command: str, cooldown_seconds: int
@@ -185,20 +185,20 @@ class Economy(commands.Cog):
         now = int(datetime.datetime.utcnow().timestamp())
         if (now - last_used) < cooldown_seconds:
             expiry = last_used + cooldown_seconds
-            logger.info(f"cooldown active user={user_id} command={command} expires={expiry}")
+            logger.info(f"[ECONOMY] cooldown active user={user_id} command={command} expires={expiry}")
             return expiry  # expiry timestamp
-        logger.debug(f"no cooldown user={user_id} command={command}")
+        logger.debug(f"[ECONOMY] no cooldown user={user_id} command={command}")
         return None
 
     async def clear_cooldowns(self, user_id: int):
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("DELETE FROM cooldowns WHERE user_id = ?", (user_id,))
             await db.commit()
-        logger.info(f"clear_cooldowns for user={user_id}")
+        logger.info(f"[ECONOMY] clear_cooldowns for user={user_id}")
     
     async def get_balance(self, user_id: int) -> int:
         if user_id == self.bot.user.id:
-            logger.debug(f"get_balance requested for bot user {user_id}, returning 0")
+            logger.debug(f"[ECONOMY] get_balance requested for bot user {user_id}, returning 0")
             return 0
         async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute("SELECT balance FROM economy WHERE user_id = ?", (user_id,)) as cursor:
@@ -207,9 +207,9 @@ class Economy(commands.Cog):
                     await db.execute("INSERT INTO economy (user_id, balance, last_daily) VALUES (?, ?, ?)",
                                      (user_id, 0, None))
                     await db.commit()
-                    logger.info(f"Created economy row for user={user_id} with balance=0")
+                    logger.info(f"[ECONOMY] Created economy row for user={user_id} with balance=0")
                     return 0
-                logger.debug(f"get_balance user={user_id} -> {row[0]}")
+                logger.debug(f"[ECONOMY] get_balance user={user_id} -> {row[0]}")
                 return row[0]
 
     async def update_balance(self, user_id: int, amount: int):
@@ -226,7 +226,7 @@ class Economy(commands.Cog):
             async with db.execute("SELECT item, quantity FROM inventory WHERE user_id = ?", (user_id,)) as cursor:
                 async for item, qty in cursor:
                     items[item] = qty
-        logger.debug(f"get_inventory user={user_id} -> {items}")
+        logger.debug(f"[ECONOMY] get_inventory user={user_id} -> {items}")
         return items
 
     async def add_item(self, user_id: int, item: str, qty: int = 1):
@@ -237,11 +237,11 @@ class Economy(commands.Cog):
                 if row:
                     await db.execute("UPDATE inventory SET quantity = quantity + ? WHERE user_id = ? AND item = ?",
                                      (qty, user_id, item))
-                    logger.debug(f"add_item increment user={user_id} item={item} qty={qty}")
+                    logger.debug(f"[ECONOMY] add_item increment user={user_id} item={item} qty={qty}")
                 else:
                     await db.execute("INSERT INTO inventory (user_id, item, quantity) VALUES (?, ?, ?)",
                                      (user_id, item, qty))
-                    logger.debug(f"add_item insert user={user_id} item={item} qty={qty}")
+                    logger.debug(f"[ECONOMY] add_item insert user={user_id} item={item} qty={qty}")
             await db.commit()
 
     async def remove_item(self, user_id: int, item: str, qty: int = 1) -> bool:
@@ -250,7 +250,7 @@ class Economy(commands.Cog):
             async with db.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item = ?", (user_id, item)) as cursor:
                 row = await cursor.fetchone()
                 if not row or row[0] < qty:
-                    logger.info(f"remove_item failed user={user_id} item={item} requested={qty} available={(row[0] if row else 0)}")
+                    logger.info(f"[ECONOMY] remove_item failed user={user_id} item={item} requested={qty} available={(row[0] if row else 0)}")
                     return False
                 new_qty = row[0] - qty
                 if new_qty == 0:
@@ -259,7 +259,7 @@ class Economy(commands.Cog):
                     await db.execute("UPDATE inventory SET quantity = ? WHERE user_id = ? AND item = ?",
                                      (new_qty, user_id, item))
             await db.commit()
-        logger.debug(f"remove_item success user={user_id} item={item} qty={qty} remaining={new_qty if 'new_qty' in locals() else 0}")
+        logger.debug(f"[ECONOMY] remove_item success user={user_id} item={item} qty={qty} remaining={new_qty if 'new_qty' in locals() else 0}")
         return True
 
     async def fetch_shop_items(self) -> dict:
@@ -268,14 +268,14 @@ class Economy(commands.Cog):
             async with db.execute("SELECT item_id, name, price FROM shop_items") as cursor:
                 async for item_id, name, price in cursor:
                     items[item_id] = {"name": name, "price": price}
-        logger.debug(f"fetch_shop_items -> {len(items)} items")
+        logger.debug(f"[ECONOMY] fetch_shop_items -> {len(items)} items")
         return items
 
     async def fetch_leaderboard(self) -> list[tuple[int, int]]:
         async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute("SELECT user_id, balance FROM economy ORDER BY balance DESC LIMIT 10") as cursor:
                 rows = await cursor.fetchall()
-        logger.debug(f"fetch_leaderboard -> {len(rows)} rows")
+        logger.debug(f"[ECONOMY] fetch_leaderboard -> {len(rows)} rows")
         return rows
 
     # ===================== ECONOMY GROUP =====================
@@ -477,7 +477,7 @@ class Economy(commands.Cog):
             for item in found:
                 await self.add_item(ctx.author.id, item, 1)
             found_items.extend(found)
-        logger.info(f"dig results user={ctx.author.id} found={len(found_items)} items")
+        logger.info(f"[ECONOMY] dig results user={ctx.author.id} found={len(found_items)} items")
 
         embed = discord.Embed(title=f"⛏️ You dug {times} times and found:", color=LOOT_COLOR)
         desc_dict = {}
@@ -493,7 +493,7 @@ class Economy(commands.Cog):
 
     @economy_group.command(name="chop")
     async def chop(self, ctx, times: int = 10):
-        logger.info(f"Command: chop by user={ctx.author.id} times={times}")
+        logger.info(f"[ECONOMY] Command: chop by user={ctx.author.id} times={times}")
         cooldown_seconds = COOLDOWN_DIG_FISH_MINUTES * 60
         remaining = await self.has_user_cooldown(ctx.author.id, "chop", cooldown_seconds)
         if remaining:
@@ -523,9 +523,9 @@ class Economy(commands.Cog):
                 found_items.extend(found)
 
         if not found_items:
-            logger.info(f"chop found nothing user={ctx.author.id}")
+            logger.info(f"[ECONOMY] chop found nothing user={ctx.author.id}")
             return await ctx.send("🪓 You chopped but tree felt on you this time!")
-        logger.info(f"chop results user={ctx.author.id} found={len(found_items)} items")
+        logger.info(f"[ECONOMY] chop results user={ctx.author.id} found={len(found_items)} items")
 
         embed = discord.Embed(title=f"🪓 You chopped {times} times and found:", color=LOOT_COLOR)
         desc_dict = {}
@@ -541,7 +541,7 @@ class Economy(commands.Cog):
     # ===================== FISH =====================
     @economy_group.command(name="fish")
     async def fish(self, ctx, times: int = 10):
-        logger.info(f"Command: fish by user={ctx.author.id} times={times}")
+        logger.info(f"[ECONOMY] Command: fish by user={ctx.author.id} times={times}")
         cooldown_seconds = COOLDOWN_DIG_FISH_MINUTES * 60
         remaining = await self.has_user_cooldown(ctx.author.id, "fish", cooldown_seconds)
         if remaining:
@@ -570,9 +570,9 @@ class Economy(commands.Cog):
                 caught_items.extend(caught)
 
         if not caught_items:
-            logger.info(f"fish caught nothing user={ctx.author.id}")
+            logger.info(f"[ECONOMY] fish caught nothing user={ctx.author.id}")
             return await ctx.send("🎣 You fished but didn't catch anything this time!")
-        logger.info(f"fish results user={ctx.author.id} caught={len(caught_items)} fish")
+        logger.info(f"[ECONOMY] fish results user={ctx.author.id} caught={len(caught_items)} fish")
 
         embed = discord.Embed(title=f"🎣 You fished {times} times and caught:", color=LOOT_COLOR)
         desc_dict = {}
@@ -590,18 +590,18 @@ class Economy(commands.Cog):
     # ===================== GAMBLE =====================
     @economy_group.command(name="coinflip", aliases=["cf"])
     async def coinflip(self, ctx, amount: int):
-        logger.info(f"Command: coinflip by user={ctx.author.id} amount={amount}")
+        logger.info(f"[ECONOMY] Command: coinflip by user={ctx.author.id} amount={amount}")
         if amount <= 0:
             return await ctx.send("❌ Amount must be positive.")
         balance = await self.get_balance(ctx.author.id)
         if balance < amount:
-            logger.info(f"coinflip insufficient funds user={ctx.author.id} balance={balance} bet={amount}")
+            logger.info(f"[ECONOMY] coinflip insufficient funds user={ctx.author.id} balance={balance} bet={amount}")
             return await ctx.send("❌ Not enough coins.")
         won = random.choice([True, False])
         if won:
             amount = amount*2
         await self.update_balance(ctx.author.id, amount if won else -amount)
-        logger.info(f"coinflip result user={ctx.author.id} won={won} change={amount if won else -amount}")
+        logger.info(f"[ECONOMY] coinflip result user={ctx.author.id} won={won} change={amount if won else -amount}")
         embed = discord.Embed(title="🎲 Coinflip", description=f"You {'won' if won else 'lost'} {amount} coins!", color=GAMBLE_WIN_COLOR if won else GAMBLE_LOSE_COLOR)
         embed.set_footer(text=f"Version: {ECONOMY_VERSION}")
         await ctx.send(embed=embed)
@@ -609,7 +609,7 @@ class Economy(commands.Cog):
     # black jack with buttons
     @economy_group.command(name="blackjack", aliases=["bj"])
     async def blackjack(self, ctx, amount: int):
-        logger.info(f"Command: blackjack by user={ctx.author.id} amount={amount}")
+        logger.info(f"[ECONOMY] Command: blackjack by user={ctx.author.id} amount={amount}")
         if amount <= 0:
             return await ctx.send("❌ Amount must be positive.")
         balance = await self.get_balance(ctx.author.id)
@@ -618,7 +618,7 @@ class Economy(commands.Cog):
 
         # TAKE THE BET UP-FRONT
         await self.update_balance(ctx.author.id, -amount)
-        logger.info(f"blackjack bet taken user={ctx.author.id} bet={amount}")
+        logger.info(f"[ECONOMY] blackjack bet taken user={ctx.author.id} bet={amount}")
 
         suits = BLACK_JACK_SUITS
         ranks = BLACK_JACK_RANKS
@@ -707,7 +707,7 @@ class Economy(commands.Cog):
         # TIMEOUT: refund bet
         if res is None:
             await self.update_balance(ctx.author.id, amount)
-            logger.info(f"blackjack timeout - bet refunded user={ctx.author.id} bet={amount}")
+            logger.info(f"[ECONOMY] blackjack timeout - bet refunded user={ctx.author.id} bet={amount}")
             return await ctx.send("⏰ Game timed out. Your bet has been refunded.")
 
         # SETTLE
@@ -715,21 +715,21 @@ class Economy(commands.Cog):
             # pay back stake + winnings: since stake already deducted, give 2*amount to net +amount
             await self.update_balance(ctx.author.id, amount * 2)
             await ctx.send(f"✅ You won {amount} coins!")
-            logger.info(f"blackjack win user={ctx.author.id} bet={amount}")
+            logger.info(f"[ECONOMY] blackjack win user={ctx.author.id} bet={amount}")
         elif res == "lose":
             # bet already taken, nothing to do
             await ctx.send(f"❌ You lost {amount} coins.")
-            logger.info(f"blackjack lose user={ctx.author.id} bet={amount}")
+            logger.info(f"[ECONOMY] blackjack lose user={ctx.author.id} bet={amount}")
         else:  # draw
             await self.update_balance(ctx.author.id, amount)
             await ctx.send("It's a draw! Your bet has been returned.")
-            logger.info(f"blackjack draw - bet returned user={ctx.author.id} bet={amount}")
+            logger.info(f"[ECONOMY] blackjack draw - bet returned user={ctx.author.id} bet={amount}")
 
-        logger.debug(f"blackjack finished user={ctx.author.id} result={res}")
+        logger.debug(f"[ECONOMY] blackjack finished user={ctx.author.id} result={res}")
 
     @economy_group.command(name="trade")
     async def trade(self, ctx, member: discord.Member = None):
-        logger.info(f"Command: trade invoked by user={ctx.author.id} target={(member.id if member else None)}")
+        logger.info(f"[ECONOMY] Command: trade invoked by user={ctx.author.id} target={(member.id if member else None)}")
         # If no member provided — show a selection menu
         if member is None:
             options = [
@@ -777,9 +777,9 @@ class Economy(commands.Cog):
             dm_partner = await member.create_dm()
             await dm_author.send("🔔 Preparing trade panel... (this is a quick check)", delete_after=1)
             await dm_partner.send("🔔 Preparing trade panel... (this is a quick check)", delete_after=1)
-            logger.debug(f"DMs opened for trade initiator={ctx.author.id} partner={member.id}")
+            logger.debug(f"[ECONOMY] DMs opened for trade initiator={ctx.author.id} partner={member.id}")
         except Exception:
-            logger.exception(f"trade failed to open DMs initiator={ctx.author.id} partner={(member.id if member else None)}")
+            logger.exception(f"[ECONOMY] trade failed to open DMs initiator={ctx.author.id} partner={(member.id if member else None)}")
             return await ctx.send("❌ Could not open DMs with one or both users. Ensure DMs are open and try again.")
 
         # Build select options for each user
@@ -828,7 +828,7 @@ class Economy(commands.Cog):
                 self.their_inv = their_inv
                 self.session = session
                 self.economy_cog = economy_cog
-                logger.debug(f"UserTradeView __init__: economy_cog type={type(self.economy_cog)}, value={self.economy_cog}")
+                logger.debug(f"[ECONOMY] UserTradeView __init__: economy_cog type={type(self.economy_cog)}, value={self.economy_cog}")
                 self.is_initiator = True # This view is always for the initiator
                 self.add_item(Button(label="Add Your Item", style=discord.ButtonStyle.primary, custom_id="add_your_item"))
                 self.add_item(Button(label="Remove Your Item", style=discord.ButtonStyle.danger, custom_id="remove_your_item"))
@@ -986,7 +986,7 @@ class Economy(commands.Cog):
 
             @discord.ui.button(label="Propose Trade", style=discord.ButtonStyle.success, custom_id="propose_trade")
             async def on_propose(self, interaction: discord.Interaction, button: Button):
-                logger.debug(f"UserTradeView on_propose: self.economy_cog type={type(self.economy_cog)}, value={self.economy_cog}")
+                logger.debug(f"[ECONOMY] UserTradeView on_propose: self.economy_cog type={type(self.economy_cog)}, value={self.economy_cog}")
                 # Only initiator will have this; sends confirmation to partner
                 if not self.is_initiator:
                     return await interaction.response.send_message("Only the trade initiator can propose the trade.", ephemeral=True)
@@ -1146,7 +1146,7 @@ class Economy(commands.Cog):
                     self.stop()
 
                 except Exception as e:
-                    logger.exception(f"Trade execution failed: {e}")
+                    logger.exception(f"[ECONOMY] Trade execution failed: {e}")
                     await interaction.followup.send("❌ An error occurred during trade execution. Trade cancelled.")
                     if self.session["initiator_msg"]:
                         await self.session["initiator_msg"].edit(content="❌ Trade failed due to an error.", embed=None, view=None)
@@ -1211,7 +1211,7 @@ class Economy(commands.Cog):
                 except ValueError:
                     await interaction.response.send_message("Invalid amount. Please enter a number.", ephemeral=True)
                 except Exception as e:
-                    logger.exception(f"Error in AmountModal on_submit: {e}")
+                    logger.exception(f"[ECONOMY] Error in AmountModal on_submit: {e}")
                     await interaction.response.send_message("An unexpected error occurred.", ephemeral=True)
 
         class CoinModal(discord.ui.Modal, title="Set Coin Amount"):
@@ -1247,7 +1247,7 @@ class Economy(commands.Cog):
                 except ValueError:
                     await interaction.response.send_message("Invalid amount. Please enter a number.", ephemeral=True)
                 except Exception as e:
-                    logger.exception(f"Error in CoinModal on_submit: {e}")
+                    logger.exception(f"[ECONOMY] Error in CoinModal on_submit: {e}")
                     await interaction.response.send_message("An unexpected error occurred.", ephemeral=True)
 
         # After initial setup, send the trade panel to the initiator
@@ -1454,9 +1454,9 @@ class Economy(commands.Cog):
             part_msg = await member.send(embed=create_trade_embed(), view=trade_view)
             session["initiator_msg"] = init_msg
             session["partner_msg"] = part_msg
-            logger.info(f"trade panels sent initiator={ctx.author.id} partner={member.id}")
+            logger.info(f"[ECONOMY] trade panels sent initiator={ctx.author.id} partner={member.id}")
         except Exception:
-            logger.exception("failed to send trade panels")
+            logger.exception("[ECONOMY] failed to send trade panels")
             return await ctx.send("❌ Failed to open trade panels.")
 
         # Wait until either view times out or session becomes inactive
@@ -1478,7 +1478,7 @@ class Economy(commands.Cog):
     # leader board
     @economy_group.command(name="leaderboard", aliases=["lb"])
     async def leaderboard(self, ctx):
-        logger.info(f"Command: leaderboard by user={ctx.author.id}")
+        logger.info(f"[ECONOMY] Command: leaderboard by user={ctx.author.id}")
         leaderboard = await self.fetch_leaderboard()
         if not leaderboard:
             return await ctx.send("❌ No data for leaderboard.")
@@ -1497,7 +1497,7 @@ class Economy(commands.Cog):
     @economy_group.group(name="admin", invoke_without_command=True)
     @commands.is_owner()
     async def admin_group(self, ctx):
-        logger.info(f"Command: admin help by owner={ctx.author.id}")
+        logger.info(f"[ECONOMY] Command: admin help by owner={ctx.author.id}")
         embed = discord.Embed(
             title="Economy Admin Commands",
             description=f"Manage the economy system."
@@ -1525,14 +1525,14 @@ class Economy(commands.Cog):
     @commands.is_owner()
     async def give(self, ctx, member: discord.Member, amount: int):
         await self.update_balance(member.id, amount)
-        logger.info(f"admin give by owner={ctx.author.id} to={member.id} amount={amount}")
+        logger.info(f"[ECONOMY] admin give by owner={ctx.author.id} to={member.id} amount={amount}")
         await ctx.send(f"✅ Gave {amount} coins to {member.mention}")
 
     @admin_group.command(name="take")
     @commands.is_owner()
     async def take(self, ctx, member: discord.Member, amount: int):
         await self.update_balance(member.id, -amount)
-        logger.info(f"admin take by owner={ctx.author.id} from={member.id} amount={amount}")
+        logger.info(f"[ECONOMY] admin take by owner={ctx.author.id} from={member.id} amount={amount}")
         await ctx.send(f"✅ Took {amount} coins from {member.mention}")
 
     @admin_group.command(name="reset")
@@ -1542,7 +1542,7 @@ class Economy(commands.Cog):
             await db.execute("DELETE FROM economy WHERE user_id = ?", (member.id,))
             await db.execute("DELETE FROM inventory WHERE user_id = ?", (member.id,))
             await db.commit()
-        logger.info(f"admin reset by owner={ctx.author.id} user={member.id}")
+        logger.info(f"[ECONOMY] admin reset by owner={ctx.author.id} user={member.id}")
         await ctx.send(f"✅ Reset {member.mention}'s profile.")
     
     @admin_group.group(name="shop", invoke_without_command=False)
@@ -1653,5 +1653,5 @@ async def setup(bot):
     try: 
         await bot.add_cog(Economy(bot))
     except Exception as e:
-        logger.error(f"Failed to load Economy cog: {e}")
+        logger.error(f"[ECONOMY] Failed to load Economy cog: {e}")
         raise e
