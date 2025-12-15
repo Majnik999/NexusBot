@@ -96,6 +96,23 @@ async def on_ready():
 
     logger.info("Syncing completed!")
 
+@bot.event
+async def on_command_error(ctx, error):
+    original = getattr(error, "original", error)
+    if isinstance(original, commands.CommandNotFound):
+        return
+    logger.exception(f"Command '{getattr(ctx, 'command', None)}' raised an exception")
+    logger.exception(error)
+    embed = discord.Embed(
+        title="Internal Error",
+        description="An internal error occurred while running that command. The error has been logged.",
+        color=discord.Color.red()
+    )
+    try:
+        await ctx.send(embed=embed)
+    except:
+        pass
+
 ascii_art = """
  ____                                        __                              
 /\  _`\   __                                /\ \                             

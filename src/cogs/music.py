@@ -201,6 +201,19 @@ class Music(commands.Cog):
         self._lavalink_host: typing.Optional[str] = None
         self._lavalink_port: typing.Optional[int] = None
 
+    @tasks.loop(seconds=10.0)  # Update every 10 seconds
+    async def panel_updater(self):
+        """Periodically updates the music panel for all active voice clients."""
+        if not self.bot.is_ready():
+            return
+
+        for guild_id, vc in wavelink.Pool.nodes.items():
+            if isinstance(vc, CustomPlayer) and vc.panel_message:
+                try:
+                    await self.update_panel_message(vc)
+                except Exception as e:
+                    logger.warning(f"[{vc.guild.id if vc.guild else 'N/A'}] Error updating panel in background: {e}")
+
     async def _ensure_deaf(self, vc: CustomPlayer):
         """Try to server-deafen the bot; ensure self-deaf is enabled as a fallback.
 
@@ -238,6 +251,7 @@ class Music(commands.Cog):
     async def cog_unload(self):
         """Disconnect all players when the cog is unloaded."""
         logger.info("Music cog unloaded. Disconnecting all players...")
+        self.panel_updater.cancel()
         try:
             # Make a copy of nodes to avoid runtime mutation during iteration.
             nodes = list(getattr(wavelink.Pool, 'nodes', {}).items())
@@ -263,6 +277,7 @@ class Music(commands.Cog):
             self._lavalink_port = parsed.port or (443 if parsed.scheme == "wss" else 80)
             try:
                 self.lavalink_monitor.start()
+                self.panel_updater.start()
             except RuntimeError:
                 pass
             self._lavalink_online = True
@@ -532,8 +547,14 @@ class Music(commands.Cog):
                     return await ctx.send("Failed to play the playlist.")
                 else:
                     logger.info(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Started playing playlist.")
-                    if vc.panel_message:
-                        await self.update_panel_message(vc)
+            if not vc.panel_message:
+                try:
+                    vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
+                except Exception as e:
+                    logger.warning(f"[{ctx.guild.id if ctx.guild else 'N/A'}] Failed to create music panel message for playlist: {e}")
+                    vc.panel_message = None
+            if vc.panel_message:
+                await self.update_panel_message(vc)
             return
         else:
             track = tracks[0]
@@ -633,17 +654,6 @@ class Music(commands.Cog):
                 pass
         vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
         await self.update_panel_message(vc)
-
-    @commands.Cog.listener()
-    async def on_command_error(self, ctx, error):
-        original = getattr(error, "original", error)
-        if isinstance(original, commands.CommandNotFound):
-            return
-        logger.exception(f"Command '{getattr(ctx, 'command', None)}' raised an exception")
-        try:
-            await ctx.send("An internal error occurred while running that command. The error has been logged.")
-        except:
-            pass
 
     async def _notify_guilds(self, message: str, throttle: int = 300):
         now = time.time()
@@ -793,8 +803,14 @@ class Music(commands.Cog):
                         return await interaction.followup.send("Failed to play the playlist.", ephemeral=True)
                     else:
                         logger.info(f"[{interaction.guild.id}] Started playing playlist via context menu.")
-                        if vc.panel_message:
-                            await self.update_panel_message(vc)
+                if not vc.panel_message:
+                    try:
+                        vc.panel_message = await interaction.followup.send(embed=await self.build_embed(vc), view=self.panel_view)
+                    except Exception as e:
+                        logger.warning(f"[{interaction.guild.id}] Failed to create music panel message for playlist via context menu: {e}")
+                        vc.panel_message = None
+                if vc.panel_message:
+                    await self.update_panel_message(vc)
             else:
                 track = tracks[0]
                 track.requester = interaction.user
