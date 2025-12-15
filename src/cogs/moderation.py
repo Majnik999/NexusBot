@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from settings import ADMIN_IDS, MAX_PURGE_LIMIT, CLEAR_COMMAND
+from settings import ADMIN_IDS, MAX_PURGE_LIMIT
 import aiosqlite
 import os
 import asyncio
@@ -50,7 +50,6 @@ class Moderation(commands.Cog):
     @commands.bot_has_permissions(manage_messages=True)
     @commands.has_permissions(manage_messages=True)
     async def clear(self, ctx, messages: int):
-        if not CLEAR_COMMAND: return
         if messages and messages <= 1:
             await ctx.send("⚠️ The specified number must be greater than 1!")
         
