@@ -200,6 +200,7 @@ class Music(commands.Cog):
         self._last_notify: dict[int, float] = {}
         self._lavalink_host: typing.Optional[str] = None
         self._lavalink_port: typing.Optional[int] = None
+        self.panel_updater.start()
 
     @tasks.loop(seconds=10.0)  # Update every 10 seconds
     async def panel_updater(self):
@@ -213,6 +214,12 @@ class Music(commands.Cog):
                     await self.update_panel_message(vc)
                 except Exception as e:
                     logger.warning(f"[{vc.guild.id if vc.guild else 'N/A'}] Error updating panel in background: {e}")
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        if not self.panel_updater.is_running():
+            self.panel_updater.start()
+        logger.info("Music cog ready, panel updater started.")
 
     async def _ensure_deaf(self, vc: CustomPlayer):
         """Try to server-deafen the bot; ensure self-deaf is enabled as a fallback.
@@ -277,7 +284,6 @@ class Music(commands.Cog):
             self._lavalink_port = parsed.port or (443 if parsed.scheme == "wss" else 80)
             try:
                 self.lavalink_monitor.start()
-                self.panel_updater.start()
             except RuntimeError:
                 pass
             self._lavalink_online = True
@@ -316,7 +322,9 @@ class Music(commands.Cog):
 
     async def update_panel_message(self, vc: CustomPlayer, interaction: typing.Optional[discord.Interaction] = None):
         if not vc.panel_message:
+            logger.debug(f"[{vc.guild.id if vc.guild else 'N/A'}] No panel message found for update.")
             return
+        logger.debug(f"[{vc.guild.id if vc.guild else 'N/A'}] Updating panel message.")
         new_embed = await self.build_embed(vc)
         view_to_send = self.panel_view
         for item in view_to_send.children:
