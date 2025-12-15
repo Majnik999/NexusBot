@@ -7,6 +7,35 @@ import asyncio
 from datetime import timedelta
 import re
 
+def parse_time_duration(duration_str: str) -> timedelta:
+    """Parses a duration string (e.g., '1d', '3h', '30m') into a timedelta object."""
+    if not duration_str:
+        raise commands.BadArgument("Duration cannot be empty.")
+
+    # Regex to match duration components: number followed by a unit (d, h, m, s)
+    pattern = re.compile(r"(\d+)([dhms])")
+    matches = pattern.findall(duration_str)
+
+    if not matches:
+        raise commands.BadArgument("Invalid duration format. Use e.g., '1d', '3h', '30m', '15s'.")
+
+    total_seconds = 0
+    for value_str, unit in matches:
+        value = int(value_str)
+        if unit == 'd':
+            total_seconds += value * 86400  # 24 * 60 * 60
+        elif unit == 'h':
+            total_seconds += value * 3600   # 60 * 60
+        elif unit == 'm':
+            total_seconds += value * 60
+        elif unit == 's':
+            total_seconds += value
+
+    if total_seconds <= 0:
+        raise commands.BadArgument("Duration must be a positive value.")
+
+    return timedelta(seconds=total_seconds)
+
 class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -40,107 +69,6 @@ class Moderation(commands.Cog):
         else:
             await ctx.send("❌ An Unexpected Error occurred!")
             
-    @commands.command(name="announce", description="Owner: DM everyone. In DMs use 'announce on/off' to toggle.")
-    @commands.is_owner()
-    async def announce(self, ctx, *, content: str):
-        # initialize DB-backed preference storage (per-user)
-        # DM-only toggle: "announce on" or "announce off" -> persist pref
-        if ctx.guild is None and content.strip().lower() in ("on", "off"):
-            enabled = content.strip().lower() == "on"
-            await self.set_announce_pref(ctx.author.id, enabled)
-            await ctx.send(f"✅ Announce set to {'on' if enabled else 'off'}.")
-            return
-
-        if not ctx.author.id in ADMIN_IDS:
-            await ctx.send("❌ Only the bot owner can use this command.")
-            return
-
-        sent = 0
-        failed = 0
-        for user in set(self.bot.users):
-            if user.bot:
-                continue
-            # check per-user preference; default to enabled
-            try:
-                pref = await self.get_announce_pref(user.id)
-            except Exception:
-                pref = 1
-            if pref == 0:
-                continue
-            try:
-                await user.send(content)
-                sent += 1
-            except Exception:
-                failed += 1
-
-        await ctx.send(f"✅ Announcement sent to {sent} users. Failed: {failed}.")
-
-    async def init_db(self):
-        # create announce table if missing
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                await db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS announce(
-                        user_id INTEGER PRIMARY KEY,
-                        enabled INTEGER NOT NULL
-                    )
-                    """
-                )
-                await db.commit()
-        except Exception:
-            pass
-
-    async def set_announce_pref(self, user_id: int, enabled: bool):
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                await db.execute(
-                    "INSERT OR REPLACE INTO announce(user_id, enabled) VALUES(?, ?)",
-                    (user_id, 1 if enabled else 0),
-                )
-                await db.commit()
-        except Exception:
-            pass
-
-    async def get_announce_pref(self, user_id: int) -> int:
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                cur = await db.execute("SELECT enabled FROM announce WHERE user_id = ?", (user_id,))
-                row = await cur.fetchone()
-                if row is None:
-                    return 1
-                return int(row[0])
-        except Exception:
-            return 1
-
-def parse_time_duration(duration_str: str) -> timedelta:
-    """Parses a duration string (e.g., '1d', '3h', '30m') into a timedelta object."""
-    if not duration_str:
-        raise commands.BadArgument("Duration cannot be empty.")
-
-    # Regex to match duration components: number followed by a unit (d, h, m, s)
-    pattern = re.compile(r"(\d+)([dhms])")
-    matches = pattern.findall(duration_str)
-
-    if not matches:
-        raise commands.BadArgument("Invalid duration format. Use e.g., '1d', '3h', '30m', '15s'.")
-
-    total_seconds = 0
-    for value_str, unit in matches:
-        value = int(value_str)
-        if unit == 'd':
-            total_seconds += value * 86400  # 24 * 60 * 60
-        elif unit == 'h':
-            total_seconds += value * 3600   # 60 * 60
-        elif unit == 'm':
-            total_seconds += value * 60
-        elif unit == 's':
-            total_seconds += value
-
-    if total_seconds <= 0:
-        raise commands.BadArgument("Duration must be a positive value.")
-
-    return timedelta(seconds=total_seconds)
     
     @commands.command(name="ban", help="Bans a member, optionally for a specified duration (e.g., '1d', '30m').")
     @commands.has_permissions(ban_members=True)
