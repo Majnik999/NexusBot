@@ -208,12 +208,13 @@ class Music(commands.Cog):
         if not self.bot.is_ready():
             return
 
-        for guild_id, vc in wavelink.Pool.nodes.items():
-            if isinstance(vc, CustomPlayer) and vc.panel_message:
+        # Iterate over all connected players, not the node pool
+        for vc in self.bot.voice_clients:
+            if isinstance(vc, CustomPlayer) and vc.panel_message and vc.guild:
                 try:
                     await self.update_panel_message(vc)
                 except Exception as e:
-                    logger.warning(f"[{vc.guild.id if vc.guild else 'N/A'}] Error updating panel in background: {e}")
+                    logger.warning(f"[{vc.guild.id}] Error updating panel in background: {e}")
 
     @commands.Cog.listener()
     async def on_ready(self):
