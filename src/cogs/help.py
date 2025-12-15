@@ -3,7 +3,7 @@ import psutil
 import time
 from discord.ext import commands
 from main import PREFIX, logger
-from settings import INVITE_LINK
+from settings import INVITE_LINK, BOT_PROFILE_PICTURE_EMOJI
 
 # ===== HELP DATA =====
 HELP_DATA = {
@@ -110,7 +110,7 @@ class HelpSelect(discord.ui.Select):
             )
 
             embed = discord.Embed(
-                title="<:nexusbotprofilepicture:1450169908645204078> Help Menu",
+                title=f"{BOT_PROFILE_PICTURE_EMOJI} Help Menu",
                 description=(
                     "Use the **dropdown menu** below to select a category.\n\n"
                     f"{categories_text}"
@@ -143,7 +143,7 @@ class HelpSelect(discord.ui.Select):
         )
 
         embed = discord.Embed(
-            title=f"<:nexusbotprofilepicture:1450169908645204078> {value.capitalize()} Commands",
+            title=f"{BOT_PROFILE_PICTURE_EMOJI} {value.capitalize()} Commands",
             description=f"**{data['description']}**\n\n{commands_text}",
             color=discord.Color.green()
         )
@@ -205,7 +205,7 @@ class HelpCog(commands.Cog):
         )
 
         embed = discord.Embed(
-            title="<:nexusbotprofilepicture:1450169908645204078> Help Menu",
+            title=f"{BOT_PROFILE_PICTURE_EMOJI} Help Menu",
             description=(
                 "Use the **dropdown menu** below to select a category.\n\n"
                 ""

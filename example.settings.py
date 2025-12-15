@@ -7,6 +7,9 @@ PREFIX = "PREFIX"
 # SUDO dance command emojis:
 DANCE_MOVES: list[any] = ["💃", "🕺", "🩰", "🪩", "🤖", "🐒", "👯", "🎉"]
 
+# Bot profile pic emoji
+BOT_PROFILE_PICTURE_EMOJI: str = "<:nexusbotprofilepicture:1450169908645204078>"
+
 # Maze width and height
 MAZE_WIDTH: int = 5
 MAZE_HEIGHT: int = 5
