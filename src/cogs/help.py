@@ -1,134 +1,237 @@
 import discord
+import psutil
+import time
 from discord.ext import commands
-from main import PREFIX
-from main import logger
-from settings import CLEAR_COMMAND, INVITE_LINK
+from main import PREFIX, logger
+from settings import INVITE_LINK
 
-# This is our single source of truth for all categories + commands + descriptions
+# ===== HELP DATA =====
 HELP_DATA = {
     "fun": {
-        "description": "🎲 Fun commands like **MUSIC** jokes and memes",
+        "description": "🎲 Fun commands like **MUSIC**, jokes and memes",
         "commands": {
             PREFIX + "joke help": "Tells a random joke",
-            PREFIX + "meme <count> <subreddit>": "Sends a random meme / send a requested meme with parameters",
-            PREFIX + "8ball <question>": "Ask the magic 8ball a question",
-            PREFIX + "sudo help": "Play with fun sudo commands",
-            PREFIX + "wordle help": "Play wordle game",
-            PREFIX + "maze help": "Play maze game",
-            PREFIX + "eco help": "Economy system!",
+            PREFIX + "meme <count> <subreddit>": "Sends a random meme",
+            PREFIX + "8ball <question>": "Ask the magic 8ball",
+            PREFIX + "sudo help": "Play with sudo commands",
+            PREFIX + "wordle help": "Play wordle",
+            PREFIX + "maze help": "Play maze",
+            PREFIX + "eco help": "Economy system",
             PREFIX + "music help": "Music commands",
         }
     },
     "moderation": {
         "description": "🛡️ Kick, ban, mute, etc.",
         "commands": {
-            PREFIX + "clear <amount>": "Clear messages from a channel like purge command!" if CLEAR_COMMAND else "Clear messages from a channel like purge command! (Disabled)",
+            PREFIX + "clear <amount>": "Clear messages",
+            PREFIX + "kick <@user>": "Kick a user",
+            PREFIX + "ban <@user> <reason>": "Ban a user",
+            PREFIX + "mute <@user> <time>": "Mute a user",
+            PREFIX + "unmute <@user>": "Unmute a user",
+            PREFIX + "unban <@user>": "Unban a user"
         }
     },
     "utility": {
         "description": "🔧 Helpful tools",
         "commands": {
-            PREFIX + "profile": "Get your profile info",
-            PREFIX + "profile pic": "Get your profile picture",
-            PREFIX + "embed help": "Get help with embeds and embed builder",
-            PREFIX + "steam help": "Get help with steam commands",
+            PREFIX + "profile": "Get profile info",
+            PREFIX + "profile pic": "Get profile picture",
+            PREFIX + "embed help": "Embed builder help",
+            PREFIX + "steam help": "Steam commands",
+            PREFIX + "ai help": "AI commands",
         }
     }
 }
 
-class InviteLinkView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)  # No timeout for the view
+# ===== HELPERS =====
+def format_uptime(seconds: int) -> str:
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, _ = divmod(seconds, 60)
 
-        # Add the invite button
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+
+    return " ".join(parts) or "Just started"
+
+# ===== SELECT MENU =====
+class HelpSelect(discord.ui.Select):
+    def __init__(self, show_back: bool = False):
+        options = []
+
+        if show_back:
+            options.append(
+                discord.SelectOption(
+                    label="⬅️ Go back",
+                    description="Return to the main help menu",
+                    value="__back"
+                )
+            )
+
+        options.extend([
+            discord.SelectOption(
+                label=category.capitalize(),
+                description=data["description"],
+                value=category
+            )
+            for category, data in HELP_DATA.items()
+        ])
+
+        super().__init__(
+            placeholder="📂 Select a help category",
+            options=options,
+            row=0
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        value = self.values[0]
+
+        # ⬅️ BACK TO MAIN MENU
+        if value == "__back":
+            process = psutil.Process()
+            cpu_usage = psutil.cpu_percent(interval=0.3)
+            ram_used = process.memory_info().rss / 1024 / 1024
+            uptime_seconds = int(time.time() - interaction.client.start_time)
+
+            shard_id = (
+                str(interaction.guild.shard_id)
+                if interaction.guild and interaction.guild.shard_id is not None
+                else "No sharding"
+            )
+
+            categories_text = "\n".join(
+                f"• **{cat.capitalize()}** – {data['description']}"
+                for cat, data in HELP_DATA.items()
+            )
+
+            embed = discord.Embed(
+                title="<:nexusbotprofilepicture:1450169908645204078> Help Menu",
+                description=(
+                    "Use the **dropdown menu** below to select a category.\n\n"
+                    f"{categories_text}"
+                ),
+                color=discord.Color.blue()
+            )
+
+            embed.add_field(
+                name="📊 Runtime Info",
+                value=(
+                    f"🧠 **CPU:** `{cpu_usage:.1f}%`\n"
+                    f"💾 **RAM Used:** `{ram_used:.1f} MB`\n"
+                    f"⏱️ **Uptime:** `{format_uptime(uptime_seconds)}`\n"
+                    f"🧩 **Shard:** `{shard_id}`"
+                ),
+                inline=False
+            )
+
+            await interaction.response.edit_message(
+                embed=embed,
+                view=HelpView(show_back=False)
+            )
+            return
+
+        # 📂 CATEGORY VIEW
+        data = HELP_DATA[value]
+        commands_text = "\n".join(
+            f"`{cmd}` — {desc}"
+            for cmd, desc in data["commands"].items()
+        )
+
+        embed = discord.Embed(
+            title=f"<:nexusbotprofilepicture:1450169908645204078> {value.capitalize()} Commands",
+            description=f"**{data['description']}**\n\n{commands_text}",
+            color=discord.Color.green()
+        )
+
+        await interaction.response.edit_message(
+            embed=embed,
+            view=HelpView(show_back=True)
+        )
+
+# ===== VIEW =====
+class HelpView(discord.ui.View):
+    def __init__(self, show_back: bool = False):
+        super().__init__(timeout=None)
+
+        self.add_item(HelpSelect(show_back=show_back))
+
         self.add_item(discord.ui.Button(
             label="Invite Nexus Bot",
             url=INVITE_LINK,
-            style=discord.ButtonStyle.link
+            style=discord.ButtonStyle.link,
+            row=1
         ))
 
+        self.add_item(discord.ui.Button(
+            label="Website",
+            url="https://3002r.vapp.uk/?v=0",
+            style=discord.ButtonStyle.link,
+            row=1
+        ))
+
+        self.add_item(discord.ui.Button(
+            label="Support Server",
+            url="https://discord.gg/G57EwMhuMR",
+            style=discord.ButtonStyle.link,
+            row=1
+        ))
+
+# ===== COG =====
 class HelpCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @commands.command(name="help")
     async def help_command(self, ctx):
-        # Build the list of categories dynamically
-        categories_text = "\n".join([
-            f"• **{category}** – {data['description']}"
-            for category, data in HELP_DATA.items()
-        ])
+        process = psutil.Process()
+        cpu_usage = psutil.cpu_percent(interval=0.3)
+        ram_used = process.memory_info().rss / 1024 / 1024
+        uptime_seconds = int(time.time() - self.bot.start_time)
 
-        # Send the main help menu embed
+        shard_id = (
+            str(ctx.guild.shard_id)
+            if ctx.guild and ctx.guild.shard_id is not None
+            else "No sharding"
+        )
+
+        categories_text = "\n".join(
+            f"• **{cat.capitalize()}** – {data['description']}"
+            for cat, data in HELP_DATA.items()
+        )
+
         embed = discord.Embed(
-            title="<:NexusBotprofilepicture:1419717002414653581> Help Menu",
-            description=f"Please type a category name to see its commands:\n\n{categories_text}",
+            title="<:nexusbotprofilepicture:1450169908645204078> Help Menu",
+            description=(
+                "Use the **dropdown menu** below to select a category.\n\n"
+                ""
+            ),
             color=discord.Color.blue()
         )
-        menu = await ctx.send(embed=embed, view=InviteLinkView())
-        # Function to check user input
-        def check(message):
-            return (
-                message.author == ctx.author and
-                message.channel == ctx.channel
-            )
 
-        category = None  # This will store the valid category once we get it
-
-        # Loop until the user types a valid category
-        while category is None:
-            try:
-                msg = await self.bot.wait_for("message", check=check, timeout=60.0)
-                content = msg.content.lower()  # lowercase to make matching case-insensitive
-
-                if content in HELP_DATA:
-                    category = content  # valid category -> exit loop
-                else:
-                    # Invalid category -> DM user
-                    try:
-                        await msg.author.send(
-                            f"⚠️ '{msg.content}' is not a valid category."
-                        )
-                    except discord.Forbidden:
-                        pass
-                    finally:
-                        return
-            except TimeoutError:
-                # User took too long -> break loop
-                await menu.edit(f"⏳ You took too long to respond. Use `{PREFIX}help` to try again.", view=None)
-                return
-
-        # Step 5: Once valid category is chosen, show commands + descriptions
-        selected_category = HELP_DATA[category]
-        commands_text = "\n".join([
-            f"`{cmd}` — {desc}" for cmd, desc in selected_category["commands"].items()
-        ])
-
-        try:
-            await msg.delete()
-        except discord.Forbidden:
-            logger.error(f"Help Command: User ({ctx.author.name}, {ctx.author.id}) tried to select category in dms or some internet connection error happened!")
-            
-            embed=discord.Embed(
-                        title=f"<:NexusBotprofilepicture:1419717002414653581> {category.capitalize()} Commands",
-                        description=f"**{selected_category['description']}**\n\n{commands_text}",
-                        color=discord.Color.green()
-            )
-            
-            embed.set_footer(text="BTW this command is better in some server not in dms!")
-            
-            await ctx.send(embed=embed)
-            
-            return
-            
-        await menu.edit(
-            content="",
-            embed=discord.Embed(
-                title=f"<:NexusBotprofilepicture:1419717002414653581> {category.capitalize()} Commands",
-                description=f"**{selected_category['description']}**\n\n{commands_text}",
-                color=discord.Color.green()
-            )
+        embed.add_field(
+            name=":open_file_folder: Categories",
+            value=categories_text,
+            inline=False
         )
 
+        embed.add_field(
+            name="📊 Runtime Info",
+            value=(
+                f"🧠 **CPU:** `{cpu_usage:.1f}%`\n"
+                f"💾 **RAM Used:** `{ram_used:.1f} MB`\n"
+                f"⏱️ **Uptime:** `{format_uptime(uptime_seconds)}`\n"
+                f"🧩 **Shard:** `{shard_id}`"
+            ),
+            inline=False
+        )
+
+        await ctx.send(embed=embed, view=HelpView(show_back=False))
+
+# ===== SETUP =====
 async def setup(bot):
     await bot.add_cog(HelpCog(bot))
