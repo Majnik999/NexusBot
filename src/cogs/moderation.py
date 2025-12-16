@@ -40,11 +40,6 @@ class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db_path = os.path.join("src", "databases", "user.db")
-        # schedule DB initialization
-        try:
-            self.init_db()
-        except Exception:
-            pass
 
     @commands.command(name="clear", description="Deletes a specified number of messages.")
     @commands.bot_has_permissions(manage_messages=True)
@@ -68,7 +63,6 @@ class Moderation(commands.Cog):
         else:
             await ctx.send("❌ An Unexpected Error occurred!")
             
-    
     @commands.command(name="ban", help="Bans a member, optionally for a specified duration (e.g., '1d', '30m').")
     @commands.has_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
