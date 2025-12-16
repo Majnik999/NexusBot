@@ -39,7 +39,7 @@ class VolumeSelect(discord.ui.Select):
                 if vc.panel_message:
                     try:
                         await vc.panel_message.delete()
-                    except:
+                    except Exception:
                         pass
                     vc.panel_message = None
                 await interaction.response.send_message("Lost connection to music server. Stopping playback.", ephemeral=True)
@@ -397,8 +397,6 @@ class Music(commands.Cog):
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
         player: CustomPlayer = payload.player
         track = payload.track
-        guild_name = player.guild.name if player.guild else "Unknown"
-        guild_id = player.guild.id if player.guild else "N/A"
         requester = getattr(track, "requester", None)
         if requester:
             logger.info(f"[MUSIC | {player.guild.name if player.guild else "Unknown"} | ({player.guild.id if player.guild else "N/A"})] Now playing: {track.title} (requested by {requester})")
@@ -411,8 +409,6 @@ class Music(commands.Cog):
         if not player:
             return
         current_track = payload.track
-        guild_name = player.guild.name if player.guild else "Unknown Guild"
-        guild_id = player.guild.id if player.guild else "N/A"
         if player.repeat_track and current_track:
             await player.play(current_track, start=0)
             if player.panel_message:
@@ -559,6 +555,7 @@ class Music(commands.Cog):
                     return await ctx.send("Failed to play the playlist.")
                 else:
                     logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Started playing playlist.")
+            # Ensure panel message exists or is created, then update it.
             if not vc.panel_message:
                 try:
                     vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
@@ -571,6 +568,18 @@ class Music(commands.Cog):
         else:
             track = tracks[0]
             track.requester = ctx.author
+            # Fetch thumbnail using yt_dlp
+            try:
+                with yt_dlp.YoutubeDL({'format': 'bestthumbnail', 'noplaylist': True, 'quiet': True}) as ydl:
+                    info = ydl.extract_info(track.uri, download=False)
+                    if info and 'thumbnail' in info:
+                        track.thumbnail = info['thumbnail']
+                    else:
+                        track.thumbnail = None
+            except Exception as e:
+                logger.warning(f"[MUSIC] Failed to get thumbnail for {track.title}: {e}")
+                track.thumbnail = None
+
             if vc.playing or vc.paused:
                 vc.queue.put(track)
                 embed = discord.Embed(title="Added to Queue", description=f"[{track.title}]({track.uri})", color=discord.Color.green())
@@ -583,7 +592,16 @@ class Music(commands.Cog):
                     logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to start playing {track.title}: {e}")
                     return await ctx.send("Failed to play the track.")
                 else:
-                    logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Started play request: {track.title}")
+                    embed = discord.Embed(title="Now Playing", description=f"[{track.title}]({track.uri})", color=discord.Color.green())
+                    await ctx.send(embed=embed)
+                    logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Now playing: {track.title}")
+                    # Ensure panel message exists or is created, then update it.
+                    if not vc.panel_message:
+                        try:
+                            vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
+                        except Exception as e:
+                            logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to create music panel message for single track: {e}")
+                            vc.panel_message = None
                     if vc.panel_message:
                         await self.update_panel_message(vc)
 
@@ -662,7 +680,7 @@ class Music(commands.Cog):
         if vc.panel_message:
             try:
                 await vc.panel_message.delete()
-            except:
+            except Exception:
                 pass
         vc.panel_message = await ctx.send(embed=await self.build_embed(vc), view=self.panel_view)
         await self.update_panel_message(vc)
@@ -740,8 +758,7 @@ class Music(commands.Cog):
             return
         non_bot_count = sum(1 for m in channel.members if not m.bot)
         if non_bot_count == 0:
-            guild_id = guild.id if guild else "N/A"
-            logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] No users left in voice channel; stopping and disconnecting player.")
+            logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] No users left in VC; disconnecting.")
             try:
                 try:
                     if getattr(vc, "playing", False) or getattr(vc, "paused", False):
@@ -815,6 +832,7 @@ class Music(commands.Cog):
                         return await interaction.followup.send("Failed to play the playlist.", ephemeral=True)
                     else:
                         logger.info(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Started playing playlist via context menu.")
+                # Ensure panel message exists or is created, then update it.
                 if not vc.panel_message:
                     try:
                         vc.panel_message = await interaction.followup.send(embed=await self.build_embed(vc), view=self.panel_view)
@@ -826,14 +844,35 @@ class Music(commands.Cog):
             else:
                 track = tracks[0]
                 track.requester = interaction.user
+                # Fetch thumbnail using yt_dlp
+                try:
+                    with yt_dlp.YoutubeDL({'format': 'bestthumbnail', 'noplaylist': True, 'quiet': True}) as ydl:
+                        info = ydl.extract_info(track.uri, download=False)
+                        if info and 'thumbnail' in info:
+                            track.thumbnail = info['thumbnail']
+                        else:
+                            track.thumbnail = None
+                except Exception as e:
+                    logger.warning(f"[MUSIC] Failed to get thumbnail for {track.title}: {e}")
+                    track.thumbnail = None
+
                 if vc.playing or not vc.queue.is_empty:
                     vc.queue.put(track)
                     embed = discord.Embed(title="Added to Queue", description=f"[{track.title}]({track.uri})", color=discord.Color.green())
                     await interaction.followup.send(embed=embed)
                 else:
                     await vc.play(track)
+                    embed = discord.Embed(title="Now Playing", description=f"[{track.title}]({track.uri})", color=discord.Color.green())
+                    await interaction.followup.send(embed=embed)
+                # Ensure panel message exists or is created, then update it.
                 if not vc.panel_message:
-                    vc.panel_message = await interaction.followup.send(embed=await self.build_embed(vc), view=self.panel_view)
+                    try:
+                        vc.panel_message = await interaction.followup.send(embed=await self.build_embed(vc), view=self.panel_view)
+                    except Exception as e:
+                        logger.warning(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Failed to create music panel message for single track via context menu: {e}")
+                        vc.panel_message = None
+                if vc.panel_message:
+                    await self.update_panel_message(vc)
         except Exception as e:
             logger.warning(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Context-menu play failed: {e}")
             await interaction.followup.send("An error occurred while trying to play that link.", ephemeral=True)
