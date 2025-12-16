@@ -360,7 +360,7 @@ class Music(commands.Cog):
             if hours > 0:
                 return f"{hours}:{minutes:02}:{seconds:02}"
             return f"{minutes:02}:{seconds:02}"
-        def create_progress_bar(position, length, bar_length=15):
+        def create_progress_bar(position, length, bar_length=30):
             if length == 0:
                 return ""
             percent = position / length
@@ -368,7 +368,7 @@ class Music(commands.Cog):
             empty_blocks = bar_length - filled_blocks
             filled = "▬" * filled_blocks
             empty = "—" * empty_blocks
-            return f"{filled}🔘{empty}"
+            return f"{filled}{empty}"
         if vc and vc.playing:
             track = vc.current
             time_string = f"{format_time(vc.position)} / {format_time(track.length)}"
@@ -381,7 +381,10 @@ class Music(commands.Cog):
             embed.add_field(name="Volume", value=f"{vc.volume}%", inline=True)
             embed.add_field(name="Repeat", value=repeat_status, inline=True)
             embed.add_field(name="Progress", value=f"`{time_string}`\n{progress_bar}", inline=False)
-            embed.set_thumbnail(url=getattr(track, "thumbnail", None))
+            # Use the track's thumbnail (YouTube/sound platform cover) as the right-side image
+            thumbnail = getattr(track, "thumbnail", None)
+            if thumbnail:
+                embed.set_image(url=thumbnail)
         else:
             embed = discord.Embed(title="Nothing is currently playing. 🎵", description=f"Use `{PREFIX}music play <song>` to start the music!", color=discord.Color.red())
         return embed
