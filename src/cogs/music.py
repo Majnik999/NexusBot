@@ -9,7 +9,6 @@ import asyncio
 import time
 import re
 import urllib.parse as _urlparse
-import yt_dlp
 
 class CustomPlayer(wavelink.Player):
     def __init__(self, *args, **kwargs):
@@ -381,10 +380,12 @@ class Music(commands.Cog):
             embed.add_field(name="Volume", value=f"{vc.volume}%", inline=True)
             embed.add_field(name="Repeat", value=repeat_status, inline=True)
             embed.add_field(name="Progress", value=f"`{time_string}`\n{progress_bar}", inline=False)
-            # Use the track's thumbnail (YouTube/sound platform cover) as the right-side image
+            # Use the track's thumbnail if available, otherwise use the bot's avatar
             thumbnail = getattr(track, "thumbnail", None)
             if thumbnail:
-                embed.set_image(url=thumbnail)
+                embed.set_thumbnail(url=thumbnail)
+            elif self.bot.user and self.bot.user.avatar:
+                embed.set_thumbnail(url=self.bot.user.avatar.url)
         else:
             embed = discord.Embed(title="Nothing is currently playing. 🎵", description=f"Use `{PREFIX}music play <song>` to start the music!", color=discord.Color.red())
         return embed
@@ -568,17 +569,6 @@ class Music(commands.Cog):
         else:
             track = tracks[0]
             track.requester = ctx.author
-            # Fetch thumbnail using yt_dlp
-            try:
-                with yt_dlp.YoutubeDL({'format': 'bestthumbnail', 'noplaylist': True, 'quiet': True}) as ydl:
-                    info = ydl.extract_info(track.uri, download=False)
-                    if info and 'thumbnail' in info:
-                        track.thumbnail = info['thumbnail']
-                    else:
-                        track.thumbnail = None
-            except Exception as e:
-                logger.warning(f"[MUSIC] Failed to get thumbnail for {track.title}: {e}")
-                track.thumbnail = None
 
             if vc.playing or vc.paused:
                 vc.queue.put(track)
@@ -592,8 +582,6 @@ class Music(commands.Cog):
                     logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to start playing {track.title}: {e}")
                     return await ctx.send("Failed to play the track.")
                 else:
-                    embed = discord.Embed(title="Now Playing", description=f"[{track.title}]({track.uri})", color=discord.Color.green())
-                    await ctx.send(embed=embed)
                     logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Now playing: {track.title}")
                     # Ensure panel message exists or is created, then update it.
                     if not vc.panel_message:
@@ -844,17 +832,6 @@ class Music(commands.Cog):
             else:
                 track = tracks[0]
                 track.requester = interaction.user
-                # Fetch thumbnail using yt_dlp
-                try:
-                    with yt_dlp.YoutubeDL({'format': 'bestthumbnail', 'noplaylist': True, 'quiet': True}) as ydl:
-                        info = ydl.extract_info(track.uri, download=False)
-                        if info and 'thumbnail' in info:
-                            track.thumbnail = info['thumbnail']
-                        else:
-                            track.thumbnail = None
-                except Exception as e:
-                    logger.warning(f"[MUSIC] Failed to get thumbnail for {track.title}: {e}")
-                    track.thumbnail = None
 
                 if vc.playing or not vc.queue.is_empty:
                     vc.queue.put(track)
