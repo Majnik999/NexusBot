@@ -9,6 +9,27 @@ import asyncio
 import time
 import re
 import urllib.parse as _urlparse
+import yt_dlp
+
+def get_url_from_query(query):
+    # Nastavenia pre yt-dlp
+    ydl_opts = {
+        'format': 'best',
+        'noplaylist': True,        # Zabezpečí, že sa nebude spracovávať celý playlist
+        'quiet': True,             # Potlačí výpisy do konzoly
+        'simulate': True,          # Nesťahovať video, iba získať info
+        'default_search': 'ytsearch', # Nastaví vyhľadávanie cez YouTube
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        # Vyhľadáme iba prvý výsledok (ytsearch1)
+        info = ydl.extract_info(f"ytsearch1:{query}", download=False)
+        
+        if 'entries' in info and len(info['entries']) > 0:
+            # Získame URL z prvého nájdeného záznamu
+            video_url = info['entries'][0]['webpage_url']
+            return video_url
+        return None
 
 class CustomPlayer(wavelink.Player):
     def __init__(self, *args, **kwargs):
@@ -41,12 +62,32 @@ class VolumeSelect(discord.ui.Select):
                     except Exception:
                         pass
                     vc.panel_message = None
-                await interaction.response.send_message("Lost connection to music server. Stopping playback.", ephemeral=True)
+                
+                embed = discord.Embed()
+
+                embed.title = "Internal Error"
+                embed.description = "Lost connection to music server. Stopping playback."
+                embed.color = discord.Color.red()
+
+                await interaction.response.send_message(embed=embed, ephemeral=True)
             except Exception:
-                await interaction.response.send_message("An error occurred with the music player.", ephemeral=True)
+
+                embed = discord.Embed()
+
+                embed.title = "Internal Error"
+                embed.description = "An error occurred with the music player."
+                embed.color = discord.Color.red()
+
+                await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         except ValueError:
-            await interaction.response.send_message("Invalid volume selection.", ephemeral=True)
+            embed = discord.Embed()
+
+            embed.title = "User Error"
+            embed.description = "Invalid volume selection."
+            embed.color = discord.Color.red()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
         if not interaction.response.is_done():
             await interaction.response.defer()
 
@@ -313,10 +354,24 @@ class Music(commands.Cog):
             reply = interaction_or_ctx.send
         vc: CustomPlayer = guild.voice_client
         if not vc:
-            await reply("I'm not connected to a voice channel! Use `!music play` first.")
+
+            embed = discord.Embed()
+
+            embed.title = "User Error"
+            embed.description = f"I'm not connected to a voice channel! Use `{PREFIX}music play` first."
+            embed.color = discord.Color.from_rgb(255, 165, 0) # color #FFA500
+
+            await reply(embed=embed)
             return None, None
         if not user_voice or user_voice.channel != vc.channel:
-            await reply("You must be in the bot's voice channel to use the controls! 🛑")
+
+            embed = discord.Embed()
+
+            embed.title = "User Error"
+            embed.description = "You must be in the bot's voice channel to use the controls!"
+            embed.color = discord.Color.from_rgb(255, 165, 0) # color #FFA500
+
+            await reply(embed=embed)
             return None, None
         return vc, reply
 
@@ -359,7 +414,7 @@ class Music(commands.Cog):
             if hours > 0:
                 return f"{hours}:{minutes:02}:{seconds:02}"
             return f"{minutes:02}:{seconds:02}"
-        def create_progress_bar(position, length, bar_length=30):
+        def create_progress_bar(position, length, bar_length=25):
             if length == 0:
                 return ""
             percent = position / length
@@ -501,7 +556,14 @@ class Music(commands.Cog):
         vc: CustomPlayer = ctx.voice_client
         if not vc:
             if not ctx.author.voice:
-                return await ctx.send("Join a VC first!")
+
+                embed = discord.Embed()
+
+                embed.title = "User Error"
+                embed.description = "Join a VC first!"
+                embed.color = discord.Color.from_rgb(255, 165, 0) # color #FFA500
+
+                return await ctx.send(embed=embed)
             try:
                 vc = await ctx.author.voice.channel.connect(cls=CustomPlayer, self_deaf=True)
                 vc.text_channel = ctx.channel
@@ -511,7 +573,14 @@ class Music(commands.Cog):
                     pass
             except Exception as e:
                 logger.warning(f"[MUSIC | {ctx.guild.name if ctx.guild else 'N/A'} ({ctx.guild.id if ctx.guild else 'N/A'})] Failed to connect to VC: {e}")
-                return await ctx.send("Failed to join your voice channel.")
+                
+                embed = discord.Embed()
+
+                embed.title = "Internal Error"
+                embed.description = "Failed to join your voice channel."
+                embed.color = discord.Color.red()
+                
+                return await ctx.send(embed=embed)
             try:
                 await vc.set_volume(50)
             except Exception as e:
@@ -523,9 +592,27 @@ class Music(commands.Cog):
             except Exception as e:
                 logger.warning(f"[{vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to create music panel message: {e}")
                 vc.panel_message = None
-        tracks = await wavelink.Playable.search(search)
+
+        # Detect if the search string is a URL or a plain query
+        if re.match(r'https?://\S+', search):
+            # It's a link; use wavelink.Playable.search directly
+            tracks = await wavelink.Playable.search(search)
+        else:
+            # It's a plain query; prepend "ytsearch:" to search YouTube
+
+            search = get_url_from_query(search)
+
+            tracks = await wavelink.Playable.search(f"ytsearch:{search}")
+
         if not tracks:
-            await ctx.send(f"❌ No music found for `{search}`!")
+
+            embed = discord.Embed()
+
+            embed.title = "Internal Error"
+            embed.description = f"No songs found for search: {search}"
+            embed.color = discord.Color.red()
+
+            await ctx.send(embed=embed)
             logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] No music found for search: {search}")
             return
 
@@ -553,7 +640,14 @@ class Music(commands.Cog):
                     await vc.play(vc.queue.get())
                 except Exception as e:
                     logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to start playing playlist: {e}")
-                    return await ctx.send("Failed to play the playlist.")
+                    
+                    embed = discord.Embed()
+
+                    embed.title = "Internal Error"
+                    embed.description = "Failed to play the playlist."
+                    embed.color = discord.Color.red()
+                    
+                    return await ctx.send(embed=embed)
                 else:
                     logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Started playing playlist.")
             # Ensure panel message exists or is created, then update it.
@@ -580,7 +674,14 @@ class Music(commands.Cog):
                     await vc.play(track)
                 except Exception as e:
                     logger.warning(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Failed to start playing {track.title}: {e}")
-                    return await ctx.send("Failed to play the track.")
+                    
+                    embed = discord.Embed()
+
+                    embed.title = "Internal Error"  
+                    embed.description = "Failed to play the track."
+                    embed.color = discord.Color.red()
+                    
+                    return await ctx.send(embed=embed)
                 else:
                     logger.info(f"[MUSIC | {vc.guild.name if vc.guild else "Unknown"} | ({vc.guild.id if vc.guild else "N/A"})] Now playing: {track.title}")
                     # Ensure panel message exists or is created, then update it.
@@ -614,7 +715,13 @@ class Music(commands.Cog):
     async def queue_cmd(self, ctx: commands.Context):
         vc: CustomPlayer = ctx.voice_client
         if not vc or vc.queue.is_empty:
-            return await ctx.send("Queue is empty!")
+
+            embed = discord.Embed()
+
+            embed.description = "Queue is Empty"
+            embed.color = discord.Color.from_rgb(255, 165, 0) # color #FFA500
+
+            return await ctx.send(embed=embed)
         # Snapshot the queue so pagination remains consistent while viewing
         try:
             tracks = list(vc.queue)
@@ -653,10 +760,25 @@ class Music(commands.Cog):
     async def repeat_cmd(self, ctx: commands.Context):
         vc: CustomPlayer = ctx.voice_client
         if not vc:
-            return await ctx.send("I'm not connected to a voice channel!")
+
+            embed = discord.Embed()
+
+            embed.title = "Internal Error"
+            embed.description = "I'm not connected to a voice channel!"
+            embed.color = discord.Color.red()
+
+            return await ctx.send(embed=embed)
         vc.repeat_track = not vc.repeat_track
         status = "enabled" if vc.repeat_track else "disabled"
-        await ctx.send(f"Track repeat has been **{status}**.")
+
+        embed = discord.Embed()
+
+        status_bool = True if vc.repeat_track else False
+
+        embed.description = f"Track repeat has been **{status}**."
+        embed.color = discord.Color.green() if status_bool else discord.Color.red()
+
+        await ctx.send(embed=embed)
         if vc.panel_message:
             await self.update_panel_message(vc)
 
@@ -664,7 +786,14 @@ class Music(commands.Cog):
     async def panel_cmd(self, ctx: commands.Context):
         vc: CustomPlayer = ctx.voice_client
         if not vc:
-            return await ctx.send("I need to be playing music to show the panel!")
+
+            embed = discord.Embed()
+
+            embed.title = "User Error"
+            embed.description = "I need to be playing music to show the panel!"
+            embed.color = discord.Color.from_rgb(255, 165, 0) # color #FFA500
+
+            return await ctx.send(embed=embed)
         if vc.panel_message:
             try:
                 await vc.panel_message.delete()
@@ -774,7 +903,14 @@ class Music(commands.Cog):
         vc: CustomPlayer = interaction.guild.voice_client
         if not vc:
             if not interaction.user.voice:
-                return await interaction.followup.send("Join a voice channel first!", ephemeral=True)
+                
+                embed = discord.Embed()
+
+                embed.title = "User Error"
+                embed.description = "Join a voice channel first!"
+                embed.color = discord.Color.from_rgb(255, 165, 0) # color #FFA500
+
+                return await interaction.followup.send(embed=embed, ephemeral=True)
             try:
                 vc = await interaction.user.voice.channel.connect(cls=CustomPlayer, self_deaf=True)
                 vc.text_channel = interaction.channel
@@ -784,7 +920,14 @@ class Music(commands.Cog):
                     pass
             except Exception as e:
                 logger.warning(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Failed to connect to VC via context menu: {e}")
-                return await interaction.followup.send("Could not join your voice channel.", ephemeral=True)
+                
+                embed = discord.Embed()
+
+                embed.title = "Internal Error"
+                embed.description = "Failed to join your voice channel."
+                embed.color = discord.Color.red()
+                
+                return await interaction.followup.send(embed=embed, ephemeral=True)
             try:
                 await vc.set_volume(50)
             except Exception as e:
@@ -792,7 +935,14 @@ class Music(commands.Cog):
         try:
             tracks = await wavelink.Playable.search(query)
             if not tracks:
-                return await interaction.followup.send("Could not find any playable audio for that link.", ephemeral=True)
+
+                embed = discord.Embed()
+
+                embed.title = "Internal Error"
+                embed.description = "Could not find any playable audio or playlist for that link."
+                embed.color = discord.Color.red()
+
+                return await interaction.followup.send(embed=embed, ephemeral=True)
 
             if isinstance(tracks, wavelink.Playlist):
                 added_count = 0
@@ -817,7 +967,14 @@ class Music(commands.Cog):
                         await vc.play(vc.queue.get())
                     except Exception as e:
                         logger.warning(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Failed to start playing playlist via context menu: {e}")
-                        return await interaction.followup.send("Failed to play the playlist.", ephemeral=True)
+                        
+                        embed = discord.Embed()
+
+                        embed.title = "Internal Error"
+                        embed.description = "Failed to play the playlist."
+                        embed.color = discord.Color.red()
+
+                        return await interaction.followup.send(embed=embed, ephemeral=True)
                     else:
                         logger.info(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Started playing playlist via context menu.")
                 # Ensure panel message exists or is created, then update it.
@@ -852,7 +1009,14 @@ class Music(commands.Cog):
                     await self.update_panel_message(vc)
         except Exception as e:
             logger.warning(f"[MUSIC | {interaction.guild.name} | ({interaction.guild.id})] Context-menu play failed: {e}")
-            await interaction.followup.send("An error occurred while trying to play that link.", ephemeral=True)
+
+            embed = discord.Embed()
+
+            embed.title = "Internal Error"
+            embed.description = "An error occurred while trying to play that link."
+            embed.color = discord.Color.red()
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 async def setup(bot):
     music_cog = Music(bot)
@@ -861,7 +1025,14 @@ async def setup(bot):
     async def play_track_context_menu(interaction: discord.Interaction, message: discord.Message):
         url_match = re.search(r'https?://\S+', message.content)
         if not url_match:
-            return await interaction.response.send_message("No valid URL found in that message.", ephemeral=True)
+
+            embed = discord.Embed()
+
+            embed.title = "User Error"
+            embed.description = "No valid URL found in that message."
+            embed.color = discord.Color.from_rgb(255, 165, 0) # color #FFA500
+
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         url = url_match.group(0)
         await music_cog._play_from_url(interaction, url)
     bot.tree.add_command(play_track_context_menu)
